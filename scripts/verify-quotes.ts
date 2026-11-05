@@ -2,6 +2,8 @@ import { config } from 'dotenv'
 
 config({ path: '.env.local', quiet: true })
 
+import { assertLocalDatabase } from './local-db-guard'
+
 /**
  * 合併報價的分組與金額驗證。
  *
@@ -30,9 +32,7 @@ function eq(label: string, actual: unknown, expected: unknown) {
 }
 
 async function main() {
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('拒絕在 production 環境執行')
-  }
+  assertLocalDatabase('verify:quotes')
 
   const { db } = await import('../src/db')
   const { clients, quoteItems, quotes, services, sites } = await import(

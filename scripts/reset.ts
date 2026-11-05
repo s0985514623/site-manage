@@ -2,6 +2,8 @@ import { config } from 'dotenv'
 
 config({ path: '.env.local', quiet: true })
 
+import { assertLocalDatabase } from './local-db-guard'
+
 /**
  * 清空所有業務資料（保留 settings）。
  * 僅供開發使用 —— 正式環境跑這個會刪光客戶資料。
@@ -10,9 +12,7 @@ config({ path: '.env.local', quiet: true })
  */
 
 async function main() {
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('拒絕在 production 環境執行 db:reset')
-  }
+  assertLocalDatabase('db:reset')
 
   const { sql } = await import('../src/db')
 

@@ -2,6 +2,8 @@ import { config } from 'dotenv'
 
 config({ path: '.env.local', quiet: true })
 
+import { assertLocalDatabase } from './local-db-guard'
+
 /**
  * 開發用種子資料，以「九如基金會主機報價單」的真實情境為藍本。
  *
@@ -15,12 +17,22 @@ config({ path: '.env.local', quiet: true })
  */
 
 async function main() {
+  assertLocalDatabase('db:seed')
+
   const { db } = await import('../src/db')
   const { clients, contacts, plans, services, sites } = await import(
     '../src/db/schema'
   )
   const { eq } = await import('drizzle-orm')
   const { plusDays, today } = await import('../src/lib/dates')
+
+  // 示範資料只 INSERT 不去重，重跑會多出一份一樣的客戶
+  const existing = await db.select({ id: clients.id }).from(clients).limit(1)
+  if (existing.length > 0) {
+    throw new Error(
+      '資料庫裡已經有客戶資料，拒絕匯入示範資料。要重來請先執行 npm run db:reset',
+    )
+  }
 
   const base = today()
   const day = (n: number) => plusDays(base, n)

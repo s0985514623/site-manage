@@ -73,6 +73,7 @@ jobs:
       - name: 建立 schema 與種子資料
         run: |
           npm run db:push -- --force
+          npm run db:seed-company
           npm run db:seed
 
       # scripts/verify-*.ts 會實際寫入再清掉測試資料，並且在
@@ -177,8 +178,7 @@ jobs:
           compose run --rm migrate
           compose up -d app
 
-          # GHCR 的 private 套件在 Free 方案只有 500 MB 額度，
-          # 不清舊映像很快就會滿
+          # 清掉 VPS 上不再使用的舊映像，免得磁碟被吃光
           docker image prune -f
           docker logout ghcr.io
 

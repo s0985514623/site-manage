@@ -29,7 +29,8 @@ cp .env.example .env.local
 # 4. 建立資料表
 npm run db:push
 
-# 5. （選用）匯入示範資料
+# 5. （選用）匯入示範資料（資料庫已有客戶時會拒絕執行）
+npm run db:seed-company
 npm run db:seed
 
 # 6. 啟動
@@ -160,9 +161,9 @@ npm run dev
 | `npm run dev` | 開發伺服器 |
 | `npm run build` | 正式建置 |
 | `npm run typecheck` | 型別檢查 |
-| `npm run db:push` | 把 schema 套用到資料庫 |
+| `npm run db:push` | 把 schema 套用到資料庫（僅限本機資料庫） |
 | `npm run db:studio` | 開啟 Drizzle Studio 瀏覽資料 |
-| `npm run db:seed` | 匯入示範資料 |
+| `npm run db:seed` | 匯入示範資料（僅限本機的空資料庫） |
 | `npm run db:reset` | 清空所有業務資料（僅限開發） |
 | `npm run verify` | 執行全部驗證 |
 

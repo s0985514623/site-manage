@@ -2,6 +2,8 @@ import { config } from 'dotenv'
 
 config({ path: '.env.local', quiet: true })
 
+import { assertLocalDatabase } from './local-db-guard'
+
 /**
  * 回簽附件的驗證。
  *
@@ -50,9 +52,7 @@ function sniff(buffer: Buffer): string | null {
 }
 
 async function main() {
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('拒絕在 production 環境執行')
-  }
+  assertLocalDatabase('verify:attachments')
 
   const { db } = await import('../src/db')
   const { clients, quoteAttachments, quotes, sites } = await import(
