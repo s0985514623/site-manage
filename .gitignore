@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+!.env.example
+
+# 字型原始檔（由 scripts/build-fonts.py 產生 public/fonts 下的子集字型）
+.fonts-src/
+
+# 驗證腳本產生的預覽檔
+.tmp-*

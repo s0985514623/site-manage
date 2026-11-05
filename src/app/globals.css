@@ -1,26 +1,110 @@
-@import "tailwindcss";
+@import 'tailwindcss';
+
+/*
+ * 這是一套每天要掃過幾十筆到期資料的內部工具，
+ * 設計取向是「一眼看出哪個快爆了」，而不是視覺花俏：
+ * 高對比、緊湊的表格、明確的顏色語意。
+ */
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f6f7f9;
+  --surface: #ffffff;
+  --surface-muted: #f1f3f5;
+  --border: #dfe3e8;
+  --foreground: #14181f;
+  --muted: #667085;
+  --accent: #1f6feb;
+  --accent-foreground: #ffffff;
+
+  /* 到期急迫度，語意固定不隨主題改變含義 */
+  --overdue: #d92d20;
+  --overdue-bg: #fef3f2;
+  --critical: #dc6803;
+  --critical-bg: #fffaeb;
+  --warning: #b54708;
+  --warning-bg: #fffaeb;
+  --upcoming: #175cd3;
+  --upcoming-bg: #eff8ff;
+  --safe: #067647;
+  --safe-bg: #ecfdf3;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --background: #0d1117;
+    --surface: #161b22;
+    --surface-muted: #1c2128;
+    --border: #2d333b;
+    --foreground: #e6edf3;
+    --muted: #8b949e;
+    --accent: #4493f8;
+    --accent-foreground: #0d1117;
+
+    --overdue: #ff7b72;
+    --overdue-bg: #2d1416;
+    --critical: #e3922d;
+    --critical-bg: #2b1d0e;
+    --warning: #d29922;
+    --warning-bg: #2b1d0e;
+    --upcoming: #6cb6ff;
+    --upcoming-bg: #0f1d2e;
+    --safe: #3fb950;
+    --safe-bg: #0f2418;
+  }
+}
+
+:root[data-theme='dark'] {
+  --background: #0d1117;
+  --surface: #161b22;
+  --surface-muted: #1c2128;
+  --border: #2d333b;
+  --foreground: #e6edf3;
+  --muted: #8b949e;
+  --accent: #4493f8;
+  --accent-foreground: #0d1117;
+
+  --overdue: #ff7b72;
+  --overdue-bg: #2d1416;
+  --critical: #e3922d;
+  --critical-bg: #2b1d0e;
+  --warning: #d29922;
+  --warning-bg: #2b1d0e;
+  --upcoming: #6cb6ff;
+  --upcoming-bg: #0f1d2e;
+  --safe: #3fb950;
+  --safe-bg: #0f2418;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-border: var(--border);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-overdue: var(--overdue);
+  --color-overdue-bg: var(--overdue-bg);
+  --color-critical: var(--critical);
+  --color-critical-bg: var(--critical-bg);
+  --color-warning: var(--warning);
+  --color-warning-bg: var(--warning-bg);
+  --color-upcoming: var(--upcoming);
+  --color-upcoming-bg: var(--upcoming-bg);
+  --color-safe: var(--safe);
+  --color-safe-bg: var(--safe-bg);
+
+  --font-sans: var(--font-noto-tc), system-ui, sans-serif;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* 數字對齊：金額與天數用等寬數字才好比對 */
+.tabular {
+  font-variant-numeric: tabular-nums;
 }

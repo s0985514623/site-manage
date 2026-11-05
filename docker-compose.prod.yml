@@ -1,0 +1,88 @@
+# 正式環境。放在 VPS 的 /srv/site-support/docker-compose.prod.yml，
+# 旁邊放一份 .env（compose 會自動載入，同時供變數代換與容器環境使用）。
+#
+# 本機開發請繼續用 docker-compose.yml —— 那支只起 Postgres，
+# 應用程式跑 next dev。
+#
+# 常用指令：
+#   docker compose -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.prod.yml run --rm migrate
+#   docker compose -f docker-compose.prod.yml up -d
+#   docker compose -f docker-compose.prod.yml logs -f app
+
+name: site-support
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: site-support-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?請在 .env 設定 POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?請在 .env 設定 POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?請在 .env 設定 POSTGRES_DB}
+      TZ: Asia/Taipei
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # 刻意不開 ports。資料庫只透過 compose 內部網路給 app 用，
+    # 不暴露在公網。要連進去看資料：
+    #   docker compose -f docker-compose.prod.yml exec postgres psql -U <user> -d <db>
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  app:
+    image: ${APP_IMAGE:?請在 .env 設定 APP_IMAGE，例如 ghcr.io/<帳號>/site-support:latest}
+    container_name: site-support-app
+    restart: unless-stopped
+    env_file: .env
+    # 只綁在 localhost。對外的 443 與憑證由 host 上的 Caddy / nginx 反向代理負責，
+    # 直接把 3000 開上公網等於跳過 TLS，而 LINE webhook 要求有效憑證的 HTTPS。
+    ports:
+      - '127.0.0.1:3000:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # 只確認 HTTP 伺服器有在回應，不看狀態碼 —— /login 要是因為設定問題回 500，
+      # 我們要的是看得到 log，而不是容器被判死然後無限重啟
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/login').then(()=>process.exit(0)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      # 預設無上限，跑久了會把小碟空間吃光
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '5'
+
+  # 一次性的 migration 容器。掛在 tools profile 底下，
+  # 所以 `up -d` 不會把它帶起來，只有 `run --rm migrate` 才會跑。
+  migrate:
+    image: ${APP_IMAGE:?}
+    profiles: ['tools']
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ['node', 'scripts/migrate.mjs']
+    restart: 'no'
+
+volumes:
+  pgdata:
+    # 客戶回簽的報價單 PDF 以 bytea 存在這個 volume 裡（見 src/db/schema.ts:430）。
+    # 這個 volume 沒了就等於憑證全失，機器快照之外請另外跑 pg_dump：
+    #   docker compose -f docker-compose.prod.yml exec -T postgres \
+    #     pg_dump -U <user> -d <db> --format=custom > backup-$(date +%F).dump
+    name: site-support-pgdata

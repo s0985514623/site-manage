@@ -1,0 +1,32 @@
+# 映像建置用不到、或會污染建置結果的東西。
+#
+# node_modules 一定要排除：本機裝的是 win32-x64-msvc 的原生套件
+# （@next/swc、@tailwindcss/oxide、lightningcss、@unrs/resolver、sharp），
+# 複製進 Linux 映像只會讓 npm ci 的快取層失效並讓建置爆掉。
+
+node_modules
+.next
+.git
+.github
+.fonts-src
+
+# 機密：正式環境的值由 docker compose 在執行時注入，絕不進映像
+.env
+.env.*
+!.env.example
+
+# 開發與驗證產物
+.tmp-*
+tsconfig.tsbuildinfo
+next-env.d.ts
+coverage
+
+# 文件與資料檔
+README.md
+AGENTS.md
+CLAUDE.md
+*.xlsx
+docker-compose.yml
+docker-compose.prod.yml
+Dockerfile
+.dockerignore

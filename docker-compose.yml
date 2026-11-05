@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: site-support-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: site_support
+      POSTGRES_PASSWORD: local_dev_only
+      POSTGRES_DB: site_support
+      TZ: Asia/Taipei
+    ports:
+      - "5433:5432"
+    volumes:
+      - site-support-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U site_support -d site_support"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  site-support-pgdata:

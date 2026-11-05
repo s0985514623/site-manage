@@ -1,0 +1,192 @@
+# 推上 main 就驗證、建置、部署到 VPS。
+#
+# 需要先在 GitHub repo → Settings → Secrets and variables → Actions 設定：
+#   SSH_HOST         VPS 的 IP 或網域
+#   SSH_USER         部署用的使用者（需在 docker 群組裡）
+#   SSH_KEY          該使用者的 SSH 私鑰（完整內容，含頭尾那兩行）
+#   SSH_KNOWN_HOSTS  在本機跑 `ssh-keyscan -H <VPS IP>` 的輸出
+#   DEPLOY_PATH      VPS 上放 docker-compose.prod.yml 的目錄，例如 /srv/site-support
+#
+# 為什麼要 SSH_KNOWN_HOSTS 而不是 StrictHostKeyChecking=no：
+# 關掉主機金鑰檢查，等於讓這條能改正式資料庫的管線接受任何冒充者。
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# 兩次部署重疊會讓 migration 與 up -d 交錯，一次只跑一條
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  # ----------------------------------------------------------------- 驗證 --
+  verify:
+    name: 驗證
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: site_support
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: site_support
+          TZ: Asia/Taipei
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U site_support -d site_support"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://site_support:ci@localhost:5433/site_support
+      APP_URL: http://localhost:3000
+      AUTH_SECRET: ci-only-not-a-real-secret
+      # 驗證腳本會真的做 AES-256-GCM 加解密，所以這裡要是合法的 32 bytes base64
+      ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      CRON_SECRET: ci-only-not-a-real-secret
+      TZ: Asia/Taipei
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: TypeScript
+        run: npm run typecheck
+
+      - run: npm run lint
+
+      # 用 db:push 而不是 db:migrate：CI 只要一份當下 schema 的資料庫，
+      # 不需要重播歷史。這也讓驗證在 migrations 還沒生成前就能跑。
+      - name: 建立 schema 與種子資料
+        run: |
+          npm run db:push -- --force
+          npm run db:seed
+
+      # scripts/verify-*.ts 會實際寫入再清掉測試資料，並且在
+      # NODE_ENV=production 時拒絕執行，所以這裡不能設 NODE_ENV
+      - name: 驗證腳本
+        run: npm run verify
+
+  # ----------------------------------------------------------- 建置與推送 --
+  build:
+    name: 建置映像
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: meta
+        name: 決定映像名稱
+        run: |
+          # GHCR 的 repository 名稱不接受大寫
+          name="$(echo "ghcr.io/${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "image=$name:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.name }}:latest
+            ${{ steps.meta.outputs.image }}
+          # 把快取存回 GHCR，讓 npm ci 那層在相依沒變時直接命中
+          cache-from: type=registry,ref=${{ steps.meta.outputs.name }}:buildcache
+          cache-to: type=registry,ref=${{ steps.meta.outputs.name }}:buildcache,mode=max
+
+  # --------------------------------------------------------------- 部署 --
+  deploy:
+    name: 部署到 VPS
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 準備 SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      # compose 檔跟著 repo 的版本走，VPS 上不要手改
+      - name: 上傳 compose 設定
+        run: |
+          scp -i ~/.ssh/id_deploy docker-compose.prod.yml \
+            "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.DEPLOY_PATH }}/docker-compose.prod.yml"
+
+      - name: Pull、migrate、重啟
+        run: |
+          ssh -i ~/.ssh/id_deploy \
+            "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
+            APP_IMAGE='${{ needs.build.outputs.image }}' \
+            DEPLOY_PATH='${{ secrets.DEPLOY_PATH }}' \
+            GHCR_USER='${{ github.actor }}' \
+            GHCR_TOKEN='${{ secrets.GITHUB_TOKEN }}' \
+            'bash -s' <<'REMOTE'
+          set -euo pipefail
+
+          cd "$DEPLOY_PATH"
+
+          # 用本次 workflow 的短期 token 登入，不必在 VPS 上長期存一把 PAT
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+
+          # 把這次要跑的映像寫進 .env。用 sha 而不是 latest，
+          # 出事時 `docker compose up -d` 回到上一個 sha 就是回滾
+          if grep -q '^APP_IMAGE=' .env; then
+            sed -i "s|^APP_IMAGE=.*|APP_IMAGE=${APP_IMAGE}|" .env
+          else
+            echo "APP_IMAGE=${APP_IMAGE}" >> .env
+          fi
+
+          compose() { docker compose -f docker-compose.prod.yml "$@"; }
+
+          compose pull
+          compose up -d postgres
+          compose run --rm migrate
+          compose up -d app
+
+          # GHCR 的 private 套件在 Free 方案只有 500 MB 額度，
+          # 不清舊映像很快就會滿
+          docker image prune -f
+          docker logout ghcr.io
+
+          compose ps
+          REMOTE
+
+      - name: 確認服務起來了
+        run: |
+          ssh -i ~/.ssh/id_deploy \
+            "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
+            "cd '${{ secrets.DEPLOY_PATH }}' && docker compose -f docker-compose.prod.yml exec -T app node -e \"fetch('http://127.0.0.1:3000/login').then(r=>{console.log('HTTP',r.status);process.exit(r.status<500?0:1)}).catch(e=>{console.error(e.message);process.exit(1)})\""
