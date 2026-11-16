@@ -1,0 +1,36 @@
+%% ═══ 區段一：Activity 標頭與 Actor 宣告 ═══
+%% [ACTIVITY] LINE操作流程
+%% [ACTOR] 管理者 -> {specs/actors/管理者.md}
+
+flowchart TD
+
+%% ═══ 區段二：節點定義 ═══
+
+    Start(( ))
+
+    %% [STEP:1] @管理者
+    S1["@管理者<br/>開啟 LINE 選單（Rich Menu；傳任意訊息也回 Quick Reply 按鈕）"]
+
+    %% [DECISION:1a] 選擇的操作
+    D1a{"選擇的操作"}
+
+    %% [BRANCH:1a:查詢] @管理者 {features/line/透過LINE查詢資訊.feature}
+    B1a_query["@管理者<br/>透過 LINE 查詢資訊"]
+
+    %% [BRANCH:1a:新增] @管理者 {features/line/透過LINE快速新增專案.feature}
+    B1a_add["@管理者<br/>透過 LINE 快速新增專案（按鈕逐步：客戶→類別→名稱→日期）"]
+
+    %% [MERGE:1a]
+    M1a(( ))
+
+    End((( )))
+
+%% ═══ 區段三：邊定義 ═══
+
+    Start --> S1
+    S1 --> D1a
+    D1a -- 查詢 --> B1a_query
+    D1a -- 新增 --> B1a_add
+    B1a_query --> M1a
+    B1a_add --> M1a
+    M1a --> End

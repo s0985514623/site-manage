@@ -1,0 +1,66 @@
+%% ═══ 區段一：Activity 標頭與 Actor 宣告 ═══
+%% [ACTIVITY] 專案管理流程
+%% [ACTOR] 管理者 -> {specs/actors/管理者.md}
+
+flowchart TD
+
+%% ═══ 區段二：節點定義 ═══
+
+    Start(( ))
+
+    %% [STEP:1] @管理者 {features/project/建立專案.feature}
+    S1["@管理者<br/>建立專案"]
+
+    %% [STEP:2] @管理者 {features/project/管理專案里程碑.feature}
+    S2["@管理者<br/>管理專案里程碑"]
+
+    %% [STEP:3] @管理者 {features/project/從專案產生報價草稿.feature}
+    S3["@管理者<br/>從專案產生報價草稿"]
+
+    %% [STEP:4] @管理者 {features/project/更新專案狀態.feature}
+    S4["@管理者<br/>更新專案狀態"]
+
+    %% [DECISION:4a] 新狀態
+    D4a{"新狀態"}
+
+    %% [BRANCH:4a:未完成 -> 4] @管理者 {features/project/更新專案狀態.feature}
+    B4a_wip["@管理者<br/>更新專案狀態"]
+
+    %% [BRANCH:4a:已完成]
+    B4a_done["專案結案"]
+
+    %% [DECISION:4a1] 是否為新網站類別且尚未轉維運
+    D4a1{"新網站類別且尚未轉維運？"}
+
+    %% [BRANCH:4a1:是] @管理者 {features/project/送出轉維運表單.feature}
+    B4a1_yes["@管理者<br/>送出轉維運表單"]
+
+    %% [BRANCH:4a1:否]
+    B4a1_no["結束"]
+
+    %% [STEP:5] @管理者 {features/project/查詢專案列表.feature}
+    S5["@管理者<br/>查詢專案列表"]
+
+    %% [STEP:6] @管理者 {features/project/編輯專案.feature}
+    S6["@管理者<br/>編輯專案"]
+
+    End((( )))
+
+%% ═══ 區段三：邊定義 ═══
+
+    Start --> S1
+    S1 --> S2
+    S2 --> S3
+    S3 --> S4
+    S4 --> D4a
+    D4a -- 未完成 --> B4a_wip
+    B4a_wip --> S4
+    D4a -- 已完成 --> B4a_done
+    B4a_done --> D4a1
+    D4a1 -- 是 --> B4a1_yes
+    D4a1 -- 否 --> B4a1_no
+    B4a1_yes --> End
+    B4a1_no --> End
+    Start --> S5
+    S5 --> S6
+    S6 --> End

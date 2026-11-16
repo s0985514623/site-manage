@@ -1,0 +1,53 @@
+%% ═══ 區段一：Activity 標頭與 Actor 宣告 ═══
+%% [ACTIVITY] 報價寄送與追蹤流程
+%% [ACTOR] 管理者 -> {specs/actors/管理者.md}
+%% [ACTOR] 排程器 -> {specs/actors/排程器.md}
+
+flowchart TD
+
+%% ═══ 區段二：節點定義 ═══
+
+    Start(( ))
+
+    %% [STEP:1] @管理者 {features/settings/切換報價寄送模式.feature}
+    S1["@管理者<br/>切換報價寄送模式"]
+
+    %% [STEP:2] @排程器 {features/quote/排程擬定續約報價草稿.feature}
+    S2["@排程器<br/>擬定續約報價草稿"]
+
+    %% [DECISION:2a] 報價寄送模式
+    D2a{"報價寄送模式"}
+
+    %% [BRANCH:2a:手動寄] @管理者 {features/quote/管理者手動寄出報價單.feature}
+    B2a_manual["@管理者<br/>後台按寄出（系統寄 Email）"]
+
+    %% [BRANCH:2a:LINE確認後自動寄] @管理者 {features/quote/管理者在LINE確認報價單.feature}
+    B2a_line["@管理者<br/>在 LINE 確認報價單"]
+
+    %% [MERGE:2a]
+    M2a(( ))
+
+    %% [STEP:3] @排程器 {features/quote/排程追蹤未回覆報價.feature}
+    S3["@排程器<br/>追蹤未回覆報價"]
+
+    %% [STEP:4] @排程器 {features/payment/排程追蹤未收款報價.feature}
+    S4["@排程器<br/>追蹤未收款報價"]
+
+    %% [STEP:5] @管理者 {features/payment/登記收款.feature}
+    S5["@管理者<br/>登記收款"]
+
+    End((( )))
+
+%% ═══ 區段三：邊定義 ═══
+
+    Start --> S1
+    S1 --> S2
+    S2 --> D2a
+    D2a -- 手動寄 --> B2a_manual
+    D2a -- LINE確認後自動寄 --> B2a_line
+    B2a_manual --> M2a
+    B2a_line --> M2a
+    M2a --> S3
+    S3 --> S4
+    S4 --> S5
+    S5 --> End

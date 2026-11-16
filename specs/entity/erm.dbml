@@ -1,0 +1,293 @@
+// erm.dbml — 以 src/db/schema.ts 為基準（current state），標註本次 delta
+//   [NEW]       新增
+//   [MODIFIED]  既有表 / 欄位變更
+//   無標記      既有，本次不變（僅列與本次功能相關的欄位）
+// 主鍵一律 uuid（gen_random_uuid）；日期一律 date（台北日）；金額 numeric(12,2)
+
+Project site_support {
+  database_type: 'PostgreSQL'
+}
+
+// ───────────────────────────── Enums ─────────────────────────────
+
+Enum client_status { active inactive }
+
+Enum site_status {
+  building [note: '建置中']
+  live     [note: '已上線']
+  paused
+  closed
+}
+
+Enum service_type { domain hosting ssl maintenance email license cdn other }
+
+Enum billing_cycle { monthly quarterly yearly biennial triennial }
+
+Enum service_status { active expired cancelled }
+
+Enum renewal_state { upcoming drafted pending_approval sent accepted renewed declined }
+
+Enum quote_status { draft pending_approval sent accepted rejected cancelled expired }
+
+Enum tax_mode { exclusive inclusive none }
+
+Enum attachment_kind { signed_quote payment_proof other }
+
+Enum notify_channel { email line }
+
+// [NEW]
+Enum project_category {
+  new_site       [note: '新網站（完成時觸發轉維運）']
+  custom_plugin  [note: '客製化外掛']
+  bug_fix        [note: 'BUG 排除']
+  other          [note: '其他']
+}
+
+// [NEW]
+Enum project_status {
+  not_started  [note: '待開始']
+  in_progress  [note: '進行中']
+  in_review    [note: '待驗收']
+  completed    [note: '已完成']
+}
+
+// [NEW]
+Enum notify_kind {
+  expiry            [note: '到期提醒（既有行為）']
+  quote_followup    [note: '報價未回覆追蹤']
+  payment_followup  [note: '未收款追蹤']
+  weekly_report     [note: '每週週報']
+  quote_draft       [note: '手動模式草稿純通知']
+}
+
+// [NEW]
+Enum line_flow_step {
+  choose_client
+  choose_category
+  input_name
+  choose_due_date
+}
+
+// ───────────────────────────── Tables ─────────────────────────────
+
+Table clients {
+  id          uuid          [pk]
+  name        text          [not null]
+  short_name  text
+  status      client_status [not null, default: 'active']
+  created_at  timestamptz   [not null]
+  updated_at  timestamptz   [not null]
+  Note: '客戶（其餘欄位不變，略）'
+}
+
+Table contacts {
+  id              uuid    [pk]
+  client_id       uuid    [not null]
+  name            text    [not null]
+  email           text
+  receive_quotes  boolean [not null, default: false, note: '報價單收件人']
+  Note: '聯絡人（其餘欄位不變，略）'
+}
+
+Table sites {
+  id           uuid        [pk]
+  client_id    uuid        [not null]
+  name         text        [not null]
+  primary_url  text
+  status       site_status [not null, default: 'live']
+  Note: '網站（其餘欄位不變，略）。轉維運時若專案未綁網站，以 status = live 新建'
+}
+
+Table services {
+  id              uuid           [pk]
+  site_id         uuid           [not null]
+  type            service_type   [not null]
+  identifier      text           [not null, note: '網域名稱 / 主機方案名稱等']
+  expires_at      date           [not null]
+  billing_cycle   billing_cycle  [not null, default: 'yearly']
+  price_amount    numeric(12,2)
+  currency        text           [not null, default: 'TWD']
+  is_ours         boolean        [not null, default: true]
+  status          service_status [not null, default: 'active']
+  renewal_state   renewal_state  [not null, default: 'upcoming']
+  current_quote_id uuid
+  gcal_event_id   text
+  source_project_id uuid         [note: '[NEW] 由哪個專案轉維運建立，可空']
+  Note: '服務項目（其餘欄位不變，略）'
+}
+
+Table quotes {
+  id            uuid          [pk]
+  quote_no      text          [not null, unique]
+  project_name  text
+  client_id     uuid          [not null]
+  site_id       uuid          [note: '[MODIFIED] 改為可空：專案報價可不綁網站']
+  project_id    uuid          [note: '[NEW] 由專案產生的報價單才有值']
+  status        quote_status  [not null, default: 'draft']
+  anchor_service_id uuid
+  anchor_date   date          [note: '[MODIFIED] 改為可空：專案報價沒有到期錨點']
+  issue_date    date          [not null]
+  valid_until   date          [not null]
+  currency      text          [not null, default: 'TWD']
+  tax_mode      tax_mode      [not null, default: 'exclusive']
+  subtotal      numeric(12,2) [not null, default: 0]
+  tax_amount    numeric(12,2) [not null, default: 0]
+  total         numeric(12,2) [not null, default: 0]
+  line_pushed_at timestamptz
+  approved_at   timestamptz   [note: 'LINE 確認時間（既有）']
+  sent_at       timestamptz   [note: '寄出時間，未回覆追蹤起算點（既有）']
+  sent_to       jsonb
+  accepted_at   timestamptz   [note: '[NEW] 客戶同意時間，專案報價未收款提醒起算點']
+  paid_on       date          [note: '[NEW] 收款日，不可晚於今天']
+  paid_amount   numeric(12,2) [note: '[NEW] 實收金額，> 0']
+  created_at    timestamptz   [not null]
+  updated_at    timestamptz   [not null]
+
+  indexes {
+    project_id [name: 'quotes_project_idx']
+  }
+  Note: '''
+  報價單。
+  狀態流轉：draft → pending_approval → sent → accepted；手動寄送模式下 draft → sent。
+  登記收款：status ∈ {sent, accepted}，且 paid_on 為空；原為 sent 者改為 accepted。
+  site_id 與 project_id 至少一個有值（CHECK）。
+  '''
+}
+
+Table quote_items {
+  id          uuid          [pk]
+  quote_id    uuid          [not null]
+  service_id  uuid
+  description text          [not null]
+  spec_note   text
+  quantity    numeric(10,2) [not null, default: 1, note: '> 0']
+  unit        text          [not null, default: '年']
+  unit_price  numeric(12,2) [not null, default: 0, note: '>= 0']
+  amount      numeric(12,2) [not null, default: 0]
+  Note: '報價項目（不變）。專案報價項目 service_id 為空'
+}
+
+Table quote_attachments {
+  id        uuid            [pk]
+  quote_id  uuid            [not null]
+  kind      attachment_kind [not null]
+  filename  text            [not null]
+  Note: '附件（不變）。登記收款的匯款證明以 kind = payment_proof 上傳'
+}
+
+Table approvals {
+  id          uuid        [pk]
+  quote_id    uuid        [not null]
+  token_hash  text        [not null]
+  expires_at  timestamptz [not null]
+  used_at     timestamptz
+  Note: 'LINE 一次性確認 token（不變）'
+}
+
+Table settings {
+  id                        integer [pk, default: 1]
+  quote_valid_days          integer [not null, default: 14]
+  gcal_calendar_id          text    [note: '「網站到期管理」日曆']
+  line_push_count           integer [not null, default: 0]
+  line_push_monthly_limit   integer [not null, default: 200]
+  auto_send_enabled         boolean [not null, default: false, note: '[NEW] false = 手動寄；true = LINE 確認後自動寄']
+  quote_followup_days       integer [not null, default: 7, note: '[NEW] 未回覆追蹤天數，>= 1']
+  gcal_project_calendar_id  text    [note: '[NEW]「專案管理」日曆 id，首次同步時自動建立']
+  Note: '單列設定表（其餘欄位不變，略）'
+}
+
+Table notifications {
+  id          uuid           [pk]
+  kind        notify_kind    [not null, default: 'expiry', note: '[NEW]']
+  service_id  uuid           [note: '[MODIFIED] 改為可空']
+  quote_id    uuid           [note: '[NEW] 報價追蹤 / 收款追蹤用']
+  level       integer        [not null, default: 0]
+  channel     notify_channel [not null]
+  sent_on     date           [not null]
+  ok          boolean        [not null, default: true]
+  error       text
+
+  indexes {
+    (kind, service_id, level, channel, sent_on) [unique, name: 'notifications_dedupe_service']
+    (kind, quote_id, channel, sent_on) [unique, name: 'notifications_dedupe_quote']
+  }
+  Note: '通知去重紀錄。週報以 (kind, channel, sent_on) 去重'
+}
+
+// [NEW]
+Table projects {
+  id                     uuid             [pk]
+  client_id              uuid             [not null]
+  site_id                uuid             [note: '選填；必須屬於同一客戶']
+  name                   text             [not null, note: '不可空白']
+  category               project_category [not null]
+  status                 project_status   [not null, default: 'not_started']
+  start_date             date
+  due_date               date             [note: '>= start_date']
+  description            text
+  estimated_amount       numeric(12,2)    [note: '>= 0']
+  currency               text             [not null, default: 'TWD']
+  handover_completed_at  timestamptz      [note: '轉維運完成時間；有值後不再顯示表單']
+  gcal_event_id          text             [note: '截止日事件（專案管理日曆）']
+  created_at             timestamptz      [not null]
+  updated_at             timestamptz      [not null]
+
+  indexes {
+    client_id
+    (status, due_date)
+    category
+  }
+  Note: '''
+  專案。四個狀態可任意切換。
+  有報價單時不可刪除；刪除時一併刪除里程碑與日曆事件。
+  '''
+}
+
+// [NEW]
+Table project_milestones {
+  id             uuid        [pk]
+  project_id     uuid        [not null]
+  name           text        [not null, note: '不可空白']
+  due_on         date        [not null]
+  completed_at   timestamptz
+  gcal_event_id  text
+  sort_order     integer     [not null, default: 0]
+  created_at     timestamptz [not null]
+  updated_at     timestamptz [not null]
+
+  indexes {
+    project_id
+  }
+  Note: '專案里程碑。每筆一個「專案管理」日曆事件；完成後事件保留'
+}
+
+// [NEW]
+Table line_conversations {
+  id              uuid           [pk]
+  line_user_id    text           [not null, unique]
+  step            line_flow_step [not null]
+  data            jsonb          [not null, note: '已選的 client_id / category / name']
+  expires_at      timestamptz    [not null, note: '最後互動 + 30 分鐘']
+  updated_at      timestamptz    [not null]
+  Note: 'LINE 快速新增專案的逐步問答暫存；取消、完成或過期即刪除'
+}
+
+// ───────────────────────────── Refs ─────────────────────────────
+
+Ref: contacts.client_id > clients.id [delete: cascade]
+Ref: sites.client_id > clients.id [delete: restrict]
+Ref: services.site_id > sites.id [delete: cascade]
+Ref: services.current_quote_id > quotes.id [delete: set null]
+Ref: services.source_project_id > projects.id [delete: set null]    // [NEW]
+Ref: quotes.client_id > clients.id [delete: restrict]
+Ref: quotes.site_id > sites.id [delete: restrict]
+Ref: quotes.project_id > projects.id [delete: restrict]              // [NEW] 有報價單的專案不可刪
+Ref: quote_items.quote_id > quotes.id [delete: cascade]
+Ref: quote_items.service_id > services.id [delete: set null]
+Ref: quote_attachments.quote_id > quotes.id [delete: cascade]
+Ref: approvals.quote_id > quotes.id [delete: cascade]
+Ref: notifications.service_id > services.id [delete: cascade]
+Ref: notifications.quote_id > quotes.id [delete: cascade]            // [NEW]
+Ref: projects.client_id > clients.id [delete: restrict]              // [NEW]
+Ref: projects.site_id > sites.id [delete: set null]                  // [NEW]
+Ref: project_milestones.project_id > projects.id [delete: cascade]   // [NEW]

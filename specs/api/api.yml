@@ -1,0 +1,752 @@
+openapi: 3.0.0
+info:
+  title: 網站續約管理系統（site-support）— 本次新增 / 變更的契約
+  version: 1.0.0
+  description: |
+    只描述本次規格範圍（專案管理、報價寄送模式、追蹤、收款、LINE 操作、監控）。
+    既有端點的未變更部分不在此列。
+
+    實作對應（x-implementation）：
+      - route         : 真實 HTTP Route Handler（src/app/api/**/route.ts）
+      - server-action : Next.js Server Action（src/server/actions/*.ts），此處的 path / method 為邏輯契約，
+                        測試以呼叫 action 函式代替 HTTP；回傳沿用 ActionState 並擴充 violationType。
+
+    驗證：
+      - server-action：NextAuth session + ALLOWED_EMAILS
+      - /api/cron/*  ：Authorization: Bearer CRON_SECRET（或 x-cron-secret）
+      - /api/line/webhook：X-Line-Signature + LINE_ADMIN_USER_ID
+      - /api/health  ：不需驗證
+
+tags:
+  - name: settings
+  - name: quote
+  - name: payment
+  - name: project
+  - name: line
+  - name: ops
+
+paths:
+  /settings/quote-sending-mode:
+    put:
+      tags: [settings]
+      operationId: setQuoteSendingMode
+      summary: 切換報價寄送模式
+      x-implementation: server-action
+      x-feature: features/settings/切換報價寄送模式.feature
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetQuoteSendingModeRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/Violation' }
+        '422': { $ref: '#/components/responses/Violation' }
+
+  /settings:
+    get:
+      tags: [settings]
+      operationId: getSettings
+      summary: 查詢系統設定（寄送模式）
+      x-implementation: server-action
+      x-feature: features/settings/切換報價寄送模式.feature
+      responses:
+        '200':
+          description: 設定
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Settings' }
+
+  /quotes/{quoteId}/send:
+    post:
+      tags: [quote]
+      operationId: sendQuoteManually
+      summary: 管理者手動寄出報價單
+      x-implementation: server-action
+      x-feature: features/quote/管理者手動寄出報價單.feature
+      parameters:
+        - $ref: '#/components/parameters/QuoteId'
+      responses:
+        '200':
+          description: 寄出成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SendQuoteResult' }
+        '404': { $ref: '#/components/responses/Violation' }
+        '422': { $ref: '#/components/responses/Violation' }
+        '502': { $ref: '#/components/responses/Violation' }
+
+  /quotes/{quoteId}/payment:
+    post:
+      tags: [payment]
+      operationId: recordPayment
+      summary: 登記收款
+      x-implementation: server-action
+      x-feature: features/payment/登記收款.feature
+      parameters:
+        - $ref: '#/components/parameters/QuoteId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: '#/components/schemas/RecordPaymentRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/Violation' }
+        '404': { $ref: '#/components/responses/Violation' }
+        '422': { $ref: '#/components/responses/Violation' }
+
+  /projects:
+    get:
+      tags: [project]
+      operationId: listProjects
+      summary: 查詢專案列表
+      x-implementation: server-action
+      x-feature: features/project/查詢專案列表.feature
+      parameters:
+        - name: category
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/ProjectCategory' }
+        - name: status
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/ProjectStatus' }
+      responses:
+        '200':
+          description: 依截止日由近到遠，無截止日排最後
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ProjectListItem' }
+    post:
+      tags: [project]
+      operationId: createProject
+      summary: 建立專案
+      x-implementation: server-action
+      x-feature: features/project/建立專案.feature
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectInput' }
+      responses:
+        '201':
+          description: 建立成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+        '400': { $ref: '#/components/responses/Violation' }
+        '404': { $ref: '#/components/responses/Violation' }
+        '422': { $ref: '#/components/responses/Violation' }
+
+  /projects/{projectId}:
+    patch:
+      tags: [project]
+      operationId: updateProject
+      summary: 編輯專案
+      x-implementation: server-action
+      x-feature: features/project/編輯專案.feature
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectUpdateInput' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/Violation' }
+        '404': { $ref: '#/components/responses/Violation' }
+        '422': { $ref: '#/components/responses/Violation' }
+    delete:
+      tags: [project]
+      operationId: deleteProject
+      summary: 刪除專案（連帶刪除里程碑與日曆事件）
+      x-implementation: server-action
+      x-feature: features/project/編輯專案.feature
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/Violation' }
+        '422': { $ref: '#/components/responses/Violation' }
+
+  /projects/{projectId}/status:
+    put:
+      tags: [project]
+      operationId: updateProjectStatus
+      summary: 更新專案狀態
+      x-implementation: server-action
+      x-feature: features/project/更新專案狀態.feature
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { $ref: '#/components/schemas/ProjectStatus' }
+      responses:
+        '200':
+          description: 狀態已更新
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UpdateProjectStatusResult' }
+        '400': { $ref: '#/components/responses/Violation' }
+        '404': { $ref: '#/components/responses/Violation' }
+
+  /projects/{projectId}/handover:
+    post:
+      tags: [project]
+      operationId: submitProjectHandover
+      summary: 送出轉維運表單
+      x-implementation: server-action
+      x-feature: features/project/送出轉維運表單.feature
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HandoverRequest' }
+      responses:
+        '200':
+          description: 已建立 / 更新網站並建立服務項目
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HandoverResult' }
+        '400': { $ref: '#/components/responses/Violation' }
+        '404': { $ref: '#/components/responses/Violation' }
+        '422': { $ref: '#/components/responses/Violation' }
+
+  /projects/{projectId}/milestones:
+    post:
+      tags: [project]
+      operationId: createMilestone
+      summary: 新增里程碑
+      x-implementation: server-action
+      x-feature: features/project/管理專案里程碑.feature
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MilestoneInput' }
+      responses:
+        '201':
+          description: 新增成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Milestone' }
+        '400': { $ref: '#/components/responses/Violation' }
+        '404': { $ref: '#/components/responses/Violation' }
+
+  /milestones/{milestoneId}:
+    patch:
+      tags: [project]
+      operationId: updateMilestone
+      summary: 修改里程碑（含標記完成）
+      x-implementation: server-action
+      x-feature: features/project/管理專案里程碑.feature
+      parameters:
+        - $ref: '#/components/parameters/MilestoneId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MilestoneUpdateInput' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/Violation' }
+        '404': { $ref: '#/components/responses/Violation' }
+    delete:
+      tags: [project]
+      operationId: deleteMilestone
+      summary: 刪除里程碑
+      x-implementation: server-action
+      x-feature: features/project/管理專案里程碑.feature
+      parameters:
+        - $ref: '#/components/parameters/MilestoneId'
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/Violation' }
+
+  /projects/{projectId}/quotes:
+    post:
+      tags: [project]
+      operationId: createProjectQuoteDraft
+      summary: 從專案產生報價草稿
+      x-implementation: server-action
+      x-feature: features/project/從專案產生報價草稿.feature
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectQuoteDraftRequest' }
+      responses:
+        '201':
+          description: 已建立草稿
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuoteSummary' }
+        '400': { $ref: '#/components/responses/Violation' }
+        '404': { $ref: '#/components/responses/Violation' }
+
+  /api/line/webhook:
+    post:
+      tags: [line, quote]
+      operationId: handleLineWebhook
+      summary: LINE webhook（既有；新增查詢、快速新增專案、寄送模式檢查）
+      x-implementation: route
+      x-feature:
+        - features/line/透過LINE查詢資訊.feature
+        - features/line/透過LINE快速新增專案.feature
+        - features/quote/管理者在LINE確認報價單.feature
+      description: |
+        事件分派（只處理 LINE_ADMIN_USER_ID，其他帳號回覆「這個帳號沒有操作權限」）：
+          postback data
+            act=approve|edit|cancel&token=…   既有報價確認；auto_send_enabled = false 時 approve 不寄信
+            query=expiring|quotes|projects     查詢（30 天內到期 / 待處理報價 / 進行中專案，各最多 5 筆）
+            add=project                        開始快速新增，進入 choose_client
+            client=<clientId>                  選客戶 → choose_category
+            category=<ProjectCategory>         選類別 → input_name
+            skip                               略過截止日 → 建立專案
+            cancel                             取消並刪除進度
+          postback params.date（datetimepicker） 選截止日 → 建立專案
+          message text                         choose_client：關鍵字搜尋；input_name：專案名稱；其他步驟：重新提示
+        一律以 reply 回覆，不耗推播額度。進度閒置 > 30 分鐘視為逾時。
+      parameters:
+        - name: X-Line-Signature
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LineWebhookBody' }
+      responses:
+        '200': { description: 已處理（結果以 LINE reply 呈現） }
+        '401': { description: 簽章不正確 }
+
+  /api/cron/quote-draft:
+    get:
+      tags: [quote]
+      operationId: runQuoteDraftCron
+      summary: 排程擬定續約報價草稿（既有；依寄送模式分流 + 心跳）
+      x-implementation: route
+      x-feature: features/quote/排程擬定續約報價草稿.feature
+      security: [{ cronSecret: [] }]
+      parameters:
+        - $ref: '#/components/parameters/DryRun'
+      responses:
+        '200': { $ref: '#/components/responses/CronSummary' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/cron/quote-followup:
+    get:
+      tags: [quote]
+      operationId: runQuoteFollowupCron
+      summary: 排程追蹤未回覆報價（建議每日 09:40）
+      x-implementation: route
+      x-feature: features/quote/排程追蹤未回覆報價.feature
+      security: [{ cronSecret: [] }]
+      parameters:
+        - $ref: '#/components/parameters/DryRun'
+      responses:
+        '200': { $ref: '#/components/responses/CronSummary' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/cron/payment-followup:
+    get:
+      tags: [payment]
+      operationId: runPaymentFollowupCron
+      summary: 排程追蹤未收款報價（建議每日 09:45）
+      x-implementation: route
+      x-feature: features/payment/排程追蹤未收款報價.feature
+      security: [{ cronSecret: [] }]
+      parameters:
+        - $ref: '#/components/parameters/DryRun'
+      responses:
+        '200': { $ref: '#/components/responses/CronSummary' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/cron/weekly-report:
+    get:
+      tags: [ops]
+      operationId: runWeeklyReportCron
+      summary: 排程推送每週週報（每週一 09:00）
+      x-implementation: route
+      x-feature: features/ops/排程推送每週週報.feature
+      security: [{ cronSecret: [] }]
+      parameters:
+        - $ref: '#/components/parameters/DryRun'
+      responses:
+        '200': { $ref: '#/components/responses/CronSummary' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/health:
+    get:
+      tags: [ops]
+      operationId: getHealth
+      summary: 外部監控查詢系統健康
+      x-implementation: route
+      x-feature: features/ops/外部監控查詢系統健康.feature
+      security: []
+      responses:
+        '200':
+          description: 應用程式與資料庫正常
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+        '503':
+          description: 資料庫無法連線
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+
+components:
+  securitySchemes:
+    cronSecret:
+      type: http
+      scheme: bearer
+
+  parameters:
+    QuoteId:
+      name: quoteId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    MilestoneId:
+      name: milestoneId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    DryRun:
+      name: dryRun
+      in: query
+      required: false
+      description: 1 / true 時只計算不推播、不寫通知紀錄（沿用既有慣例）；仍會送心跳
+      schema: { type: string, enum: ['1', 'true'] }
+
+  responses:
+    Ok:
+      description: 操作成功
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ActionOk' }
+    Violation:
+      description: 操作失敗
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: CRON_SECRET 不正確
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error: { type: string, enum: [unauthorized] }
+    CronSummary:
+      description: 排程執行摘要
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CronSummary' }
+
+  schemas:
+    Error:
+      type: object
+      description: 沿用 ActionState.error，擴充 violationType 供測試與 UI 判斷
+      required: [message, violationType]
+      properties:
+        message: { type: string, description: 給管理者看的中文訊息 }
+        violationType: { $ref: '#/components/schemas/ViolationType' }
+
+    ViolationType:
+      type: string
+      enum:
+        - INVALID_ARGUMENT
+        - INVALID_DATE_RANGE
+        - NOT_FOUND
+        - CLIENT_INACTIVE
+        - SITE_CLIENT_MISMATCH
+        - INVALID_QUOTE_STATUS
+        - QUOTE_ALREADY_SENT
+        - NO_RECIPIENT
+        - MAIL_NOT_CONFIGURED
+        - MAIL_SEND_FAILED
+        - LINE_ADMIN_NOT_CONFIGURED
+        - ALREADY_PAID
+        - PROJECT_HAS_QUOTES
+        - HANDOVER_NOT_ALLOWED
+
+    ActionOk:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean, enum: [true] }
+
+    QuoteSendingMode:
+      type: string
+      enum: [manual, line_auto]
+      description: manual = 手動寄（auto_send_enabled = false）；line_auto = LINE 確認後自動寄
+
+    SetQuoteSendingModeRequest:
+      type: object
+      required: [mode]
+      properties:
+        mode: { $ref: '#/components/schemas/QuoteSendingMode' }
+
+    Settings:
+      type: object
+      required: [autoSendEnabled, quoteFollowupDays]
+      properties:
+        autoSendEnabled: { type: boolean, default: false }
+        quoteFollowupDays: { type: integer, minimum: 1, default: 7 }
+
+    SendQuoteResult:
+      type: object
+      required: [ok, sentAt, sentTo]
+      properties:
+        ok: { type: boolean, enum: [true] }
+        sentAt: { type: string, format: date-time }
+        sentTo:
+          type: array
+          items: { type: string, format: email }
+
+    RecordPaymentRequest:
+      type: object
+      required: [paidOn, paidAmount]
+      properties:
+        paidOn: { type: string, format: date, description: 不可晚於今天（台北） }
+        paidAmount: { type: string, pattern: '^\d+(\.\d{1,2})?$', description: '> 0；字串表示避免浮點誤差（沿用既有 money 慣例）' }
+        proofFile: { type: string, format: binary, description: 選填，存為 quote_attachments(kind = payment_proof) }
+
+    ProjectCategory:
+      type: string
+      enum: [new_site, custom_plugin, bug_fix, other]
+
+    ProjectStatus:
+      type: string
+      enum: [not_started, in_progress, in_review, completed]
+
+    ProjectInput:
+      type: object
+      required: [name, clientId, category]
+      properties:
+        name: { type: string, minLength: 1, description: trim 後不可為空 }
+        clientId: { type: string, format: uuid }
+        category: { $ref: '#/components/schemas/ProjectCategory' }
+        siteId: { type: string, format: uuid, nullable: true, description: 必須屬於同一客戶 }
+        startDate: { type: string, format: date, nullable: true }
+        dueDate: { type: string, format: date, nullable: true, description: '>= startDate' }
+        description: { type: string, nullable: true }
+        estimatedAmount: { type: string, nullable: true, pattern: '^\d+(\.\d{1,2})?$', description: '>= 0' }
+
+    ProjectUpdateInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        category: { $ref: '#/components/schemas/ProjectCategory' }
+        siteId: { type: string, format: uuid, nullable: true }
+        startDate: { type: string, format: date, nullable: true }
+        dueDate: { type: string, format: date, nullable: true }
+        description: { type: string, nullable: true }
+        estimatedAmount: { type: string, nullable: true, pattern: '^\d+(\.\d{1,2})?$' }
+
+    Project:
+      type: object
+      required: [id, name, clientId, category, status]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        clientId: { type: string, format: uuid }
+        siteId: { type: string, format: uuid, nullable: true }
+        category: { $ref: '#/components/schemas/ProjectCategory' }
+        status: { $ref: '#/components/schemas/ProjectStatus' }
+        startDate: { type: string, format: date, nullable: true }
+        dueDate: { type: string, format: date, nullable: true }
+        description: { type: string, nullable: true }
+        estimatedAmount: { type: string, nullable: true }
+        handoverCompletedAt: { type: string, format: date-time, nullable: true }
+        gcalEventId: { type: string, nullable: true }
+
+    ProjectListItem:
+      type: object
+      required: [id, clientName, name, category, status, overdue]
+      properties:
+        id: { type: string, format: uuid }
+        clientName: { type: string }
+        name: { type: string }
+        category: { $ref: '#/components/schemas/ProjectCategory' }
+        status: { $ref: '#/components/schemas/ProjectStatus' }
+        dueDate: { type: string, format: date, nullable: true }
+        overdue: { type: boolean, description: dueDate < 今天 且 status ≠ completed }
+
+    UpdateProjectStatusResult:
+      type: object
+      required: [status, handoverRequired]
+      properties:
+        status: { $ref: '#/components/schemas/ProjectStatus' }
+        handoverRequired:
+          type: boolean
+          description: category = new_site 且 status = completed 且 handoverCompletedAt 為空
+
+    HandoverServiceItem:
+      type: object
+      required: [type, identifier, expiresAt, priceAmount]
+      properties:
+        type:
+          type: string
+          enum: [domain, hosting, ssl, maintenance, email, license, cdn, other]
+        identifier: { type: string, minLength: 1 }
+        expiresAt: { type: string, format: date }
+        priceAmount: { type: string, pattern: '^\d+(\.\d{1,2})?$', description: '>= 0' }
+        billingCycle:
+          type: string
+          enum: [monthly, quarterly, yearly, biennial, triennial]
+          default: yearly
+
+    HandoverRequest:
+      type: object
+      required: [items]
+      properties:
+        siteName: { type: string, description: 專案未綁網站時使用，預設帶專案名稱 }
+        siteUrl: { type: string, nullable: true }
+        items:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/HandoverServiceItem' }
+
+    HandoverResult:
+      type: object
+      required: [siteId, serviceIds]
+      properties:
+        siteId: { type: string, format: uuid }
+        serviceIds:
+          type: array
+          items: { type: string, format: uuid }
+
+    MilestoneInput:
+      type: object
+      required: [name, dueOn]
+      properties:
+        name: { type: string, minLength: 1, description: trim 後不可為空 }
+        dueOn: { type: string, format: date }
+
+    MilestoneUpdateInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        dueOn: { type: string, format: date }
+        completed: { type: boolean, description: true 時寫入 completedAt；日曆事件保留 }
+
+    Milestone:
+      type: object
+      required: [id, projectId, name, dueOn]
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        name: { type: string }
+        dueOn: { type: string, format: date }
+        completedAt: { type: string, format: date-time, nullable: true }
+        gcalEventId: { type: string, nullable: true }
+
+    ProjectQuoteItemInput:
+      type: object
+      required: [description, quantity, unit, unitPrice]
+      properties:
+        description: { type: string, minLength: 1 }
+        specNote: { type: string, nullable: true }
+        quantity: { type: string, pattern: '^\d+(\.\d{1,2})?$', description: '> 0' }
+        unit: { type: string, example: 式 }
+        unitPrice: { type: string, pattern: '^\d+(\.\d{1,2})?$', description: '>= 0' }
+        planId: { type: string, format: uuid, nullable: true, description: 從方案範本帶入時記錄來源，specNote 預設帶範本規格 }
+
+    ProjectQuoteDraftRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/ProjectQuoteItemInput' }
+
+    QuoteSummary:
+      type: object
+      required: [id, quoteNo, clientId, status, issueDate, validUntil, subtotal, total]
+      properties:
+        id: { type: string, format: uuid }
+        quoteNo: { type: string }
+        clientId: { type: string, format: uuid }
+        siteId: { type: string, format: uuid, nullable: true }
+        projectId: { type: string, format: uuid, nullable: true }
+        projectName: { type: string, nullable: true }
+        status: { type: string, enum: [draft] }
+        issueDate: { type: string, format: date }
+        validUntil: { type: string, format: date, description: issueDate + settings.quoteValidDays }
+        anchorDate: { type: string, format: date, nullable: true }
+        subtotal: { type: string }
+        total: { type: string }
+
+    LineWebhookBody:
+      type: object
+      required: [events]
+      properties:
+        destination: { type: string }
+        events:
+          type: array
+          items:
+            type: object
+            required: [type]
+            properties:
+              type: { type: string, enum: [message, postback, follow, unfollow] }
+              replyToken: { type: string }
+              source:
+                type: object
+                properties:
+                  userId: { type: string }
+              message:
+                type: object
+                properties:
+                  type: { type: string }
+                  text: { type: string }
+              postback:
+                type: object
+                properties:
+                  data: { type: string }
+                  params:
+                    type: object
+                    properties:
+                      date: { type: string, format: date }
+
+    CronSummary:
+      type: object
+      required: [ok, dryRun]
+      properties:
+        ok: { type: boolean }
+        dryRun: { type: boolean }
+        notified: { type: integer, description: 本次提醒的報價單 / 項目數 }
+        heartbeat: { type: string, enum: [sent, failed, not_configured], description: 心跳失敗不影響 ok }
+
+    Health:
+      type: object
+      required: [status]
+      additionalProperties: false
+      properties:
+        status: { type: string, enum: [ok, error] }

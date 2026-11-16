@@ -1,0 +1,33 @@
+%% ═══ 區段一：Activity 標頭與 Actor 宣告 ═══
+%% [ACTIVITY] 監控與週報流程
+%% [ACTOR] 排程器 -> {specs/actors/排程器.md}
+%% [ACTOR] 外部監控主機 -> {specs/actors/外部監控主機.md}
+
+flowchart TD
+
+%% ═══ 區段二：節點定義 ═══
+
+    Start(( ))
+
+    %% [FORK:0a]
+    F0a[["並行"]]
+
+    %% [PARALLEL:0a:1] @排程器 {features/ops/排程推送每週週報.feature}
+    P0a_1["@排程器<br/>推送每週週報（每週一 09:00）"]
+
+    %% [PARALLEL:0a:2] @外部監控主機 {features/ops/外部監控查詢系統健康.feature}
+    P0a_2["@外部監控主機<br/>查詢系統健康（每 15 分鐘；心跳逾時判斷在 PHP 端）"]
+
+    %% [JOIN:0a]
+    J0a(( ))
+
+    End((( )))
+
+%% ═══ 區段三：邊定義 ═══
+
+    Start --> F0a
+    F0a --> P0a_1
+    F0a --> P0a_2
+    P0a_1 --> J0a
+    P0a_2 --> J0a
+    J0a --> End
