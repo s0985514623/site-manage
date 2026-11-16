@@ -1,0 +1,2 @@
+# 在 Linux 上執行的腳本必須維持 LF，CRLF 會讓 bash 直接報錯
+*.sh text eol=lf

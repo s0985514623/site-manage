@@ -129,6 +129,9 @@ jobs:
     name: 部署到 VPS
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
 
     steps:
       - uses: actions/checkout@v4
@@ -178,8 +181,9 @@ jobs:
           compose run --rm migrate
           compose up -d app
 
-          # 清掉 VPS 上不再使用的舊映像，免得磁碟被吃光
-          docker image prune -f
+          # 清掉超過 30 天且沒在使用的映像，免得磁碟被吃光。
+          # 只用 -f 清不到：舊版映像都有 sha tag，不算 dangling
+          docker image prune -af --filter "until=720h"
           docker logout ghcr.io
 
           compose ps
