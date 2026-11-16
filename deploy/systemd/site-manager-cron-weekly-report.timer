@@ -1,0 +1,11 @@
+# /etc/systemd/system/site-manager-cron-weekly-report.timer
+[Unit]
+Description=site-manager cron: weekly-report（每週一 09:00 LINE 週報）
+
+[Timer]
+OnCalendar=Mon *-*-* 09:00:00 Asia/Taipei
+Persistent=true
+Unit=site-manager-cron@weekly-report.service
+
+[Install]
+WantedBy=timers.target

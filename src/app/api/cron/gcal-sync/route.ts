@@ -1,5 +1,5 @@
 import { logActivity } from '@/lib/activity'
-import { authorizeCron, unauthorized } from '@/lib/cron'
+import { runCronJob } from '@/lib/cron'
 import { env } from '@/lib/env'
 import { calendarStatus } from '@/lib/gcal'
 import { emailLayout, escapeHtml, notifyOwner } from '@/lib/mailer'
@@ -22,7 +22,11 @@ export const maxDuration = 300
  * 偵測到失效就寄信提醒你重新授權，不讓同步默默停擺。
  */
 export async function GET(request: Request) {
-  if (!authorizeCron(request)) return unauthorized()
+  // 成功（2xx、非乾跑）後送外部監控心跳
+  return runCronJob('gcal-sync', request, () => run())
+}
+
+async function run(): Promise<Response> {
 
   const status = await calendarStatus()
   if (!status.authorized) {

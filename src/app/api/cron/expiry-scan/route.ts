@@ -1,4 +1,4 @@
-import { authorizeCron, isDryRun, unauthorized } from '@/lib/cron'
+import { runCronJob } from '@/lib/cron'
 import { env, features } from '@/lib/env'
 import { logActivity } from '@/lib/activity'
 import { pushToOwner, text } from '@/lib/line'
@@ -25,8 +25,11 @@ export const maxDuration = 60
  * 加上 ?dryRun=1 可以只看結果不寄送，調整觸發天數後用來確認名單。
  */
 export async function GET(request: Request) {
-  if (!authorizeCron(request)) return unauthorized()
-  const dryRun = isDryRun(request)
+  // 成功（2xx、非乾跑）後送外部監控心跳
+  return runCronJob('expiry-scan', request, ({ dryRun }) => run(dryRun))
+}
+
+async function run(dryRun: boolean): Promise<Response> {
 
   const emailScan = await collectNotices('email')
 

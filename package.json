@@ -30,7 +30,7 @@
     "verify:attachments": "tsx --conditions=react-server scripts/verify-attachments.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage-map": "tsx scripts/check-feature-coverage.ts",
+    "test:coverage-map": "tsx scripts/check-feature-coverage.ts --all",
     "line:richmenu": "node scripts/line-richmenu.mjs"
   },
   "dependencies": {

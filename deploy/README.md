@@ -12,7 +12,7 @@
 | `docker-compose.yml` | compose 範本（使用者管理，deploy.sh 不覆寫） | `/opt/my-services/apps/site-manager/docker-compose.yml` |
 | `Caddyfile.site-manager` | 共用 Caddyfile 要加的站台區塊 | 併入 `/opt/my-services/infra` 的 Caddyfile |
 | `backup.sh` | 每日 pg_dump 本 app 的 database | `/opt/my-services/apps/site-manager/backup.sh` |
-| `systemd/*` | 5 支排程 timer + 每日備份 timer | `/etc/systemd/system/` |
+| `systemd/*` | 8 支排程 timer + 每日備份 timer | `/etc/systemd/system/` |
 
 ## 與 accounting 的差異
 
@@ -22,7 +22,7 @@
 | 資料庫 | database/role `accounting` | database/role **`site_manager`**（底線：PostgreSQL 識別字不能有 `-`） |
 | pre-deploy | `prisma migrate deploy` + seed | `node scripts/migrate.mjs`（drizzle migrator） |
 | 健康檢查 | `/healthz` | `/healthz`（`src/app/healthz/route.ts`，SELECT 1，逾時 3 秒回 503） |
-| 排程 | 無 | 5 支 systemd timer，在容器內跑 `node scripts/run-cron.mjs <端點>` |
+| 排程 | 無 | 8 支 systemd timer，在容器內跑 `node scripts/run-cron.mjs <端點>` |
 | 備份 | （另行處理） | `site-manager-backup.timer` 每日 03:00 → `backups/`，保留 14 天 |
 | Caddy | `reverse_proxy accounting-app:3000` | 同上 + `/api/cron/*` 對外 `respond 404` |
 | LINE | Messaging API + LINE Login / LIFF | **只有 Messaging API** |
@@ -38,9 +38,12 @@
 | `site-manager-cron-expiry-scan` | 每日 09:00 | `/api/cron/expiry-scan` |
 | `site-manager-cron-quote-draft` | 每日 09:30 | `/api/cron/quote-draft` |
 | `site-manager-cron-uptime` | 每小時 :15 | `/api/cron/uptime` |
+| `site-manager-cron-weekly-report` | 每週一 09:00 | `/api/cron/weekly-report` |
+| `site-manager-cron-quote-followup` | 每日 09:40 | `/api/cron/quote-followup` |
+| `site-manager-cron-payment-followup` | 每日 09:45 | `/api/cron/payment-followup` |
 
-之後新增排程（實作計畫第 5 階段的 quote-followup、payment-followup、weekly-report）：
-複製一支 `.timer` 改名、改 `OnCalendar` 與 `Unit=site-manager-cron@<端點>.service` 即可，service 不用新增。
+8 支排程成功跑完都會通知外部監控主機（`.env` 的 `HEARTBEAT_URL`、`HEARTBEAT_TOKEN`，留空則不送）。
+之後新增排程：複製一支 `.timer` 改名、改 `OnCalendar` 與 `Unit=site-manager-cron@<端點>.service` 即可，service 不用新增。
 
 ---
 
@@ -119,6 +122,10 @@
     LINE_CHANNEL_ACCESS_TOKEN=...
     LINE_CHANNEL_SECRET=...
     LINE_ADMIN_USER_ID=U...
+
+    # 外部監控主機（PHP）的心跳端點，見 tools/php-monitor/README.md；先留空也可以
+    HEARTBEAT_URL=
+    HEARTBEAT_TOKEN=
     ```
 11. `$ sudo chown deploy:deploy .env && sudo chmod 600 .env` → 預期：`ls -l` 顯示 `-rw------- deploy deploy`（accounting 踩過 root:root 的坑）
 12. **【極重要】** 把 `ENCRYPTION_KEY` 另存到密碼管理器：`$ sudo grep ^ENCRYPTION_KEY= .env`
@@ -179,10 +186,10 @@
     ```bash
     $ sudo install -m 644 /tmp/sm-systemd/site-manager-* /etc/systemd/system/ && rm -r /tmp/sm-systemd
     $ sudo systemctl daemon-reload
-    $ sudo systemctl enable --now site-manager-backup.timer site-manager-cron-{gcal-sync,detect,expiry-scan,quote-draft,uptime}.timer
+    $ sudo systemctl enable --now site-manager-backup.timer site-manager-cron-{gcal-sync,detect,expiry-scan,quote-draft,uptime,weekly-report,quote-followup,payment-followup}.timer
     $ systemctl list-timers 'site-manager-*'
     ```
-    → 預期：列出 6 支 timer 與下次執行時間
+    → 預期：列出 9 支 timer（8 支排程 + 備份）與下次執行時間
 28. 手動跑一次確認：
     ```bash
     $ sudo systemctl start site-manager-cron@uptime.service && journalctl -u site-manager-cron@uptime -n 5

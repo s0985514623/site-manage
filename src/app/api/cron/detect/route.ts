@@ -3,7 +3,7 @@ import { and, eq, inArray, isNull, lt, or } from 'drizzle-orm'
 import { db } from '@/db'
 import { services } from '@/db/schema'
 import { logActivity } from '@/lib/activity'
-import { authorizeCron, isDryRun, unauthorized } from '@/lib/cron'
+import { runCronJob } from '@/lib/cron'
 import { daysUntil } from '@/lib/dates'
 import { checkSsl } from '@/lib/ssl'
 import { lookupDomain } from '@/lib/whois'
@@ -41,8 +41,11 @@ const RECHECK_AFTER_DAYS = 7
 const MAX_PER_RUN = 40
 
 export async function GET(request: Request) {
-  if (!authorizeCron(request)) return unauthorized()
-  const dryRun = isDryRun(request)
+  // 成功（2xx、非乾跑）後送外部監控心跳
+  return runCronJob('detect', request, ({ dryRun }) => run(dryRun))
+}
+
+async function run(dryRun: boolean): Promise<Response> {
 
   const staleBefore = new Date(
     Date.now() - RECHECK_AFTER_DAYS * 24 * 60 * 60 * 1000,

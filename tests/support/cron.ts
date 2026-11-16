@@ -7,6 +7,10 @@ const ROUTES = {
   'expiry-scan': () => import('@/app/api/cron/expiry-scan/route'),
   'quote-followup': () => import('@/app/api/cron/quote-followup/route'),
   'payment-followup': () => import('@/app/api/cron/payment-followup/route'),
+  'weekly-report': () => import('@/app/api/cron/weekly-report/route'),
+  'gcal-sync': () => import('@/app/api/cron/gcal-sync/route'),
+  detect: () => import('@/app/api/cron/detect/route'),
+  uptime: () => import('@/app/api/cron/uptime/route'),
 } as const
 
 export type CronName = keyof typeof ROUTES

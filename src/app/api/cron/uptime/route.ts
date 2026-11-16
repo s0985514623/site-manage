@@ -3,7 +3,7 @@ import { and, eq, isNotNull, lt } from 'drizzle-orm'
 import { db } from '@/db'
 import { sites, uptimeChecks } from '@/db/schema'
 import { logActivity } from '@/lib/activity'
-import { authorizeCron, isDryRun, unauthorized } from '@/lib/cron'
+import { runCronJob } from '@/lib/cron'
 import { features } from '@/lib/env'
 import { pushToOwner, text } from '@/lib/line'
 import { linePushAllowedCritical, countLinePush } from '@/lib/line-quota'
@@ -31,8 +31,11 @@ const ALERT_AFTER = 2
 const KEEP_DAYS = 30
 
 export async function GET(request: Request) {
-  if (!authorizeCron(request)) return unauthorized()
-  const dryRun = isDryRun(request)
+  // 成功（2xx、非乾跑）後送外部監控心跳
+  return runCronJob('uptime', request, ({ dryRun }) => run(dryRun))
+}
+
+async function run(dryRun: boolean): Promise<Response> {
 
   const targets = await db.query.sites.findMany({
     where: and(eq(sites.monitorEnabled, true), isNotNull(sites.primaryUrl)),
