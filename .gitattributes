@@ -3,3 +3,6 @@
 
 # systemd unit 與 Caddyfile 也在 Linux 上讀，維持 LF
 deploy/** text eol=lf
+
+# PHP 監控腳本也在 Linux 主機上跑
+tools/php-monitor/** text eol=lf

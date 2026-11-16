@@ -1,0 +1,10 @@
+# 只有 heartbeat.php 對外開放；設定檔、狀態檔、函式庫與測試一律拒絕
+<FilesMatch "^(config|config\.example|lib|check)\.php$">
+  Require all denied
+</FilesMatch>
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^(data|tests)/ - [F,L]
+  # 讓 Authorization 標頭傳得進 PHP（部分 CGI / FastCGI 設定會拿掉）
+  RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+</IfModule>
