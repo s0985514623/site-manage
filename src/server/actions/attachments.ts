@@ -7,6 +7,7 @@ import { requireUser } from '@/auth'
 import { db } from '@/db'
 import { quoteAttachments, quotes, services } from '@/db/schema'
 import { logActivity } from '@/lib/activity'
+import { checkUploadFile } from '@/lib/upload-file'
 import { type ActionState } from './helpers'
 
 /**
@@ -16,61 +17,9 @@ import { type ActionState } from './helpers'
  * 跟客戶資料一起備份，不會因為容器重啟或忘了掛 volume 就不見。
  */
 
-const MAX_BYTES = 10 * 1024 * 1024
-
-/**
- * 只接受這幾種格式。
- *
- * 不是為了限制你，而是因為這些檔案之後會由瀏覽器開啟：
- * 允許 HTML 或 SVG 會讓上傳的檔案在同源下執行指令碼。
- */
-const ALLOWED = new Map<string, string[]>([
-  ['application/pdf', ['.pdf']],
-  ['image/jpeg', ['.jpg', '.jpeg']],
-  ['image/png', ['.png']],
-  ['image/heic', ['.heic']], // iPhone 直接拍的照片
-  ['image/webp', ['.webp']],
-])
-
-/** 檔案開頭的位元組。副檔名與 MIME 都可以偽造，內容不行 */
-const MAGIC: { type: string; bytes: number[] }[] = [
-  { type: 'application/pdf', bytes: [0x25, 0x50, 0x44, 0x46] }, // %PDF
-  { type: 'image/jpeg', bytes: [0xff, 0xd8, 0xff] },
-  { type: 'image/png', bytes: [0x89, 0x50, 0x4e, 0x47] },
-]
-
-function sniff(buffer: Buffer): string | null {
-  for (const { type, bytes } of MAGIC) {
-    if (bytes.every((b, i) => buffer[i] === b)) return type
-  }
-  // HEIC/WebP 的識別碼在位移 4 之後
-  const brand = buffer.subarray(4, 12).toString('latin1')
-  if (brand.startsWith('ftyphe') || brand.startsWith('ftypmif')) {
-    return 'image/heic'
-  }
-  if (
-    buffer.subarray(0, 4).toString('latin1') === 'RIFF' &&
-    buffer.subarray(8, 12).toString('latin1') === 'WEBP'
-  ) {
-    return 'image/webp'
-  }
-  return null
-}
-
 function read(formData: FormData, key: string): string {
   const v = formData.get(key)
   return typeof v === 'string' ? v : ''
-}
-
-/** 去掉路徑並限制長度，避免檔名被拿來做路徑穿越 */
-function safeName(name: string): string {
-  return (
-    name
-      .replace(/[\\/]/g, '_')
-      .replace(/[\u0000-\u001f]/g, '')
-      .trim()
-      .slice(0, 180) || '未命名檔案'
-  )
 }
 
 export async function uploadAttachment(
@@ -84,34 +33,9 @@ export async function uploadAttachment(
   if (!(file instanceof File) || file.size === 0) {
     return { error: '請選擇要上傳的檔案' }
   }
-  if (file.size > MAX_BYTES) {
-    return {
-      error: `檔案 ${(file.size / 1024 / 1024).toFixed(1)}MB 超過上限 10MB。掃描件請調低解析度，或改存 PDF。`,
-    }
-  }
-
-  const declared = file.type || ''
-  if (!ALLOWED.has(declared)) {
-    return {
-      error: `不支援的檔案格式（${declared || '未知'}）。請上傳 PDF、JPG、PNG、HEIC 或 WebP。`,
-    }
-  }
-
-  const buffer = Buffer.from(await file.arrayBuffer())
-  const actual = sniff(buffer)
-
-  /**
-   * 副檔名與瀏覽器回報的 MIME 都可以偽造，所以比對檔案開頭的位元組。
-   * 對不上就拒絕 —— 這些檔案之後會被瀏覽器開啟。
-   */
-  if (!actual) {
-    return { error: '無法辨識檔案內容，請確認檔案沒有損毀' }
-  }
-  if (actual !== declared && !(declared === 'image/jpeg' && actual === 'image/jpeg')) {
-    return {
-      error: `檔案內容與宣稱的格式不符（宣稱 ${declared}，實際 ${actual}）`,
-    }
-  }
+  const checked = await checkUploadFile(file)
+  if (!checked.ok) return { error: checked.error }
+  const { buffer, contentType: actual, filename } = checked.file
 
   const quote = await db.query.quotes.findFirst({ where: eq(quotes.id, quoteId) })
   if (!quote) return { error: '找不到這張報價單' }
@@ -128,7 +52,7 @@ export async function uploadAttachment(
   await db.insert(quoteAttachments).values({
     quoteId,
     kind,
-    filename: safeName(file.name),
+    filename,
     contentType: actual,
     sizeBytes: buffer.byteLength,
     data: buffer,

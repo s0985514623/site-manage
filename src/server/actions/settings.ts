@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 
 import { requireUser } from '@/auth'
+import { setQuoteFollowupDays, setQuoteSendingMode } from '@/server/quotes/sending-mode'
 import { logActivity } from '@/lib/activity'
 import { updateSettings } from '@/lib/settings'
 import { formError, type ActionState } from './helpers'
@@ -120,5 +121,19 @@ export async function saveSettings(
 
   revalidatePath('/settings')
   revalidatePath('/')
+  return { ok: true }
+}
+
+/** 寄送模式與未回覆追蹤天數（設定頁「寄送與追蹤」） */
+export async function saveSendingSettings(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const email = await requireUser()
+  const mode = await setQuoteSendingMode(read(formData, 'sendingMode'), email)
+  if (!mode.ok) return mode
+  const days = await setQuoteFollowupDays(read(formData, 'quoteFollowupDays'), email)
+  if (!days.ok) return days
+  revalidatePath('/settings')
   return { ok: true }
 }

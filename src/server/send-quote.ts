@@ -1,15 +1,16 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 
 import { db } from '@/db'
 import { quotes, services } from '@/db/schema'
 import { logActivity } from '@/lib/activity'
 import { formatTw } from '@/lib/dates'
-import { env } from '@/lib/env'
+import { env, features } from '@/lib/env'
 import { emailLayout, escapeHtml, sendMail } from '@/lib/mailer'
 import { formatMoney } from '@/lib/money'
 import { renderQuotePdf } from '@/lib/pdf/render'
 import { isRenewalQuote, quoteSubjectName } from '@/lib/quote-display'
 import { getSettings } from '@/lib/settings'
+import type { ViolationType } from './actions/helpers'
 import { quoteRecipients } from './queries'
 
 /**
@@ -25,8 +26,17 @@ import { quoteRecipients } from './queries'
 
 export type SendResult =
   | { ok: true; recipients: string[]; quoteNo: string; total: string }
-  | { ok: false; error: string }
+  | { ok: false; error: string; violationType: ViolationType }
 
+const SENDABLE = ['draft', 'pending_approval'] as const
+
+/**
+ * 寄出流程：驗證 → 搶佔 → 產 PDF 寄信 → 推進服務項目狀態。
+ *
+ * 搶佔（R6）：先以條件式 UPDATE 把報價單改成 sent，影響 0 列代表另一個請求已經
+ * 在寄了（連點兩下、後台與 LINE 同時按），這次直接回 QUOTE_ALREADY_SENT，
+ * 不會寄出第二封。寄信失敗再把狀態還原，報價單維持原狀可以重寄。
+ */
 export async function sendQuoteToClient(
   quoteId: string,
   actor: string,
@@ -35,15 +45,43 @@ export async function sendQuoteToClient(
     where: eq(quotes.id, quoteId),
     with: { client: true, site: true, project: true },
   })
-  if (!quote) return { ok: false, error: '找不到這張報價單' }
+  if (!quote) return { ok: false, error: '找不到這張報價單', violationType: 'NOT_FOUND' }
+  if (quote.status === 'sent' || quote.sentAt) {
+    return { ok: false, error: '這張報價單已經寄出過了，沒有重複寄送。', violationType: 'QUOTE_ALREADY_SENT' }
+  }
+  if (!(SENDABLE as readonly string[]).includes(quote.status)) {
+    return { ok: false, error: '這張報價單目前的狀態不能寄出。', violationType: 'INVALID_QUOTE_STATUS' }
+  }
 
   const recipients = await quoteRecipients(quote.clientId)
   if (recipients.length === 0) {
     return {
       ok: false,
       error: '這個客戶沒有設定報價單收件人，請先到客戶頁面補上聯絡人 Email',
+      violationType: 'NO_RECIPIENT',
     }
   }
+  if (!features.email) {
+    return { ok: false, error: '尚未設定寄信服務（Resend），無法寄出。', violationType: 'MAIL_NOT_CONFIGURED' }
+  }
+
+  // 搶佔：只有一個請求能把這張單從草稿 / 待確認改成已寄出
+  const [claimed] = await db
+    .update(quotes)
+    .set({ status: 'sent', sentAt: new Date(), sentTo: recipients, updatedAt: new Date() })
+    .where(
+      and(eq(quotes.id, quoteId), inArray(quotes.status, [...SENDABLE]), isNull(quotes.sentAt)),
+    )
+    .returning({ id: quotes.id })
+  if (!claimed) {
+    return { ok: false, error: '這張報價單已經寄出過了，沒有重複寄送。', violationType: 'QUOTE_ALREADY_SENT' }
+  }
+
+  const release = () =>
+    db
+      .update(quotes)
+      .set({ status: quote.status, sentAt: null, sentTo: null, updatedAt: new Date() })
+      .where(eq(quotes.id, quoteId))
 
   const settings = await getSettings()
 
@@ -51,9 +89,11 @@ export async function sendQuoteToClient(
   try {
     pdf = await renderQuotePdf(quoteId)
   } catch (error) {
+    await release()
     return {
       ok: false,
       error: `產生 PDF 失敗：${error instanceof Error ? error.message : String(error)}`,
+      violationType: 'MAIL_SEND_FAILED',
     }
   }
 
@@ -92,23 +132,18 @@ ${company}`,
   if (!mail.ok) {
     const reason =
       'skipped' in mail && mail.skipped ? mail.reason : 'error' in mail ? mail.error : '未知錯誤'
+    await release()
     await logActivity(actor, 'quote.send_failed', 'quote', quoteId, {
       quoteNo: quote.quoteNo,
       reason,
     })
-    return { ok: false, error: `寄送失敗：${reason}` }
+    return { ok: false, error: `寄送失敗：${reason}`, violationType: 'MAIL_SEND_FAILED' }
   }
 
-  // 寄出成功才推進狀態，且把實際收件人留存以備查
+  // 寄出時間與收件人已在搶佔時寫入；這裡補上確認時間
   await db
     .update(quotes)
-    .set({
-      status: 'sent',
-      sentAt: new Date(),
-      sentTo: recipients,
-      approvedAt: new Date(),
-      updatedAt: new Date(),
-    })
+    .set({ approvedAt: new Date(), updatedAt: new Date() })
     .where(eq(quotes.id, quoteId))
 
   await db

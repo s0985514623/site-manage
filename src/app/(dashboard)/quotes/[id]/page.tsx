@@ -20,13 +20,14 @@ import {
 } from '@/components/ui'
 import { db } from '@/db'
 import { quoteAttachments, quoteItems, quotes } from '@/db/schema'
-import { formatPeriod, formatTw } from '@/lib/dates'
+import { formatPeriod, formatTw, today } from '@/lib/dates'
 import { features } from '@/lib/env'
 import { QUOTE_STATUS_LABEL } from '@/lib/labels'
 import { formatMoney } from '@/lib/money'
 import {
   cancelQuoteAction,
   markAccepted,
+  registerPaymentAction,
   markQuoteRenewed,
   markRejected,
   sendQuote,
@@ -419,6 +420,56 @@ export default async function QuoteDetailPage({
           </Disclosure>
         </div>
       </Card>
+
+      {(quote.paidOn || quote.status === 'sent' || quote.status === 'accepted') && (
+        <Card
+          title="收款"
+          description="登記收款等於客戶已同意。收款不會自動推進到期日，續約仍請按「標記已續約」"
+        >
+          <div className="p-5">
+            {quote.paidOn ? (
+              <p className="text-sm">
+                <Badge tone="safe">已收款</Badge>{' '}
+                <span className="tabular">{formatTw(quote.paidOn)}</span>，實收{' '}
+                <strong className="tabular">
+                  {formatMoney(quote.paidAmount ?? '0', quote.currency)}
+                </strong>
+              </p>
+            ) : (
+              <Disclosure label="登記收款">
+                <ActionForm action={registerPaymentAction} submitLabel="登記">
+                  <input type="hidden" name="id" value={quote.id} />
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field label="收款日期" required>
+                      <Input name="paidOn" type="date" required defaultValue={today()} max={today()} />
+                    </Field>
+                    <Field label="實收金額" required hint="手續費被扣掉時填實際入帳金額">
+                      <Input
+                        name="paidAmount"
+                        inputMode="decimal"
+                        required
+                        defaultValue={Number(quote.total).toString()}
+                      />
+                    </Field>
+                    <Field
+                      label="匯款證明"
+                      hint="選填。PDF 或圖片，單檔上限 10MB"
+                      className="sm:col-span-2"
+                    >
+                      <Input
+                        name="proof"
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png,.heic,.webp,application/pdf,image/*"
+                        className="file:mr-3 file:rounded-md file:border-0 file:bg-surface-muted file:px-3 file:py-1.5 file:text-sm"
+                      />
+                    </Field>
+                  </div>
+                </ActionForm>
+              </Disclosure>
+            )}
+          </div>
+        </Card>
+      )}
 
       {!isClosed && (
         <Card title="操作">

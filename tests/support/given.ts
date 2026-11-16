@@ -1,12 +1,16 @@
+import { eq as eqCol } from 'drizzle-orm'
 import { afterEach } from 'vitest'
 
 import { db } from '@/db'
 import {
   clients,
   contacts,
+  notifications,
   oauthTokens,
   projectMilestones,
   projects,
+  quoteItems,
+  quotes,
   services,
   settings,
   sites,
@@ -162,4 +166,73 @@ export async function 已授權Google日曆() {
     refreshTokenIv: box.iv,
     refreshTokenTag: box.tag,
   })
+}
+
+/* ---------------------------- 報價單 ---------------------------- */
+
+type QuoteRow = {
+  quote_no: string
+  client: string
+  site?: string
+  project?: string
+  status: 'draft' | 'pending_approval' | 'sent' | 'accepted' | 'rejected' | 'cancelled' | 'expired'
+  sent_at?: string
+  accepted_at?: string
+  anchor_date?: string
+  valid_until: string
+  total: string
+  paid_on?: string
+}
+
+/** 對應規格的「系統中有以下報價單」 */
+export async function 有報價單(row: QuoteRow) {
+  const [q] = await db
+    .insert(quotes)
+    .values({
+      quoteNo: row.quote_no,
+      clientId: await 客戶id(row.client),
+      siteId: row.site ? await 網站id(row.site) : null,
+      projectId: row.project ? await 專案id(row.project) : null,
+      projectName: row.project ?? null,
+      status: row.status,
+      sentAt: row.sent_at ? new Date(row.sent_at) : null,
+      acceptedAt: row.accepted_at ? new Date(row.accepted_at) : null,
+      anchorDate: row.anchor_date ?? null,
+      issueDate: '2026-11-01',
+      validUntil: row.valid_until,
+      total: row.total,
+      subtotal: row.total,
+      paidOn: row.paid_on ?? null,
+      paidAmount: row.paid_on ? row.total : null,
+    })
+    .returning()
+  await db.insert(quoteItems).values({ quoteId: q.id, description: '項目', unitPrice: row.total, amount: row.total })
+  return q
+}
+
+export async function 報價單(quoteNo: string) {
+  return db.query.quotes.findFirst({ where: (t, { eq }) => eq(t.quoteNo, quoteNo) })
+}
+
+/** 報價單包含服務項目：明細指向該項目，項目的 current_quote_id 指回報價單 */
+export async function 報價單包含服務項目(quoteNo: string, identifier: string) {
+  const q = await 報價單(quoteNo)
+  const s = await db.query.services.findFirst({ where: (t, { eq }) => eq(t.identifier, identifier) })
+  await db.insert(quoteItems).values({ quoteId: q!.id, serviceId: s!.id, description: identifier, unitPrice: s!.priceAmount ?? '0', amount: s!.priceAmount ?? '0' })
+  await db.update(services).set({ currentQuoteId: q!.id, renewalState: 'drafted' }).where(eqCol(services.id, s!.id))
+}
+
+export async function 有通知紀錄(kind: 'quote_followup' | 'payment_followup', quoteNo: string, channel: 'line' | 'email', sentOn: string) {
+  const q = await 報價單(quoteNo)
+  await db.insert(notifications).values({ kind, quoteId: q!.id, channel, sentOn })
+}
+
+const originalResend = env.RESEND_API_KEY
+afterEach(() => {
+  env.RESEND_API_KEY = originalResend
+})
+
+/** mail_configured = false */
+export function 寄信服務未設定() {
+  env.RESEND_API_KEY = ''
 }

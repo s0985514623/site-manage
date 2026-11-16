@@ -13,6 +13,7 @@ import {
   verifySignature,
   type WebhookEvent,
 } from '@/lib/line'
+import { getSettings } from '@/lib/settings'
 import { cancelQuote, sendQuoteToClient } from '@/server/send-quote'
 
 export const dynamic = 'force-dynamic'
@@ -107,6 +108,17 @@ async function handleEvent(event: WebhookEvent): Promise<void> {
   }
   if (act !== 'approve' && act !== 'reject') {
     await reply(event.replyToken, [text('無法辨識的操作。')])
+    return
+  }
+
+  /**
+   * 寄送模式：手動寄時 LINE 的確認按鈕不寄信（設定頁可能是在推播之後才切換的）。
+   * 在消耗 token 之前檢查，token 留著，切回自動寄後仍可使用。
+   */
+  if (act === 'approve' && !(await getSettings()).autoSendEnabled) {
+    await reply(event.replyToken, [
+      text(`目前為手動寄送模式，請至後台按寄出：\n${env.APP_URL}/quotes`),
+    ])
     return
   }
 

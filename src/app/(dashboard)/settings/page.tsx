@@ -25,7 +25,7 @@ import { TAX_MODE_LABEL, formatMoney } from '@/lib/money'
 import { calendarStatus } from '@/lib/gcal'
 import { getSettings } from '@/lib/settings'
 import { deletePlan, savePlan } from '@/server/actions/plans'
-import { saveSettings } from '@/server/actions/settings'
+import { saveSendingSettings, saveSettings } from '@/server/actions/settings'
 
 export const metadata = { title: '設定' }
 export const dynamic = 'force-dynamic'
@@ -136,6 +136,43 @@ export default async function SettingsPage({
         title="設定"
         description="公司抬頭與匯款帳號會印在報價單上；觸發天數決定系統什麼時候把報價草稿推到 LINE"
       />
+
+      <Card
+        title="寄送與追蹤"
+        description="報價單要怎麼寄出，以及寄出後多久沒回覆要提醒你"
+      >
+        <div className="p-5">
+          <ActionForm action={saveSendingSettings} submitLabel="儲存">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field
+                label="報價寄送模式"
+                hint={
+                  config.autoSendEnabled
+                    ? '草稿推 LINE 確認訊息，按「確認寄出」就寄給客戶'
+                    : '草稿只推 LINE 通知，到報價單頁按「寄給客戶」由系統寄出'
+                }
+              >
+                <Select name="sendingMode" defaultValue={config.autoSendEnabled ? 'auto' : 'manual'}>
+                  <option value="manual">手動寄（後台按寄出）</option>
+                  <option value="auto" disabled={!features.lineApproval}>
+                    LINE 確認後自動寄{features.lineApproval ? '' : '（需先設定 LINE 管理者）'}
+                  </option>
+                </Select>
+              </Field>
+              <Field label="未回覆追蹤天數" hint="寄出滿這麼多天仍未回覆就提醒你，之後每隔同樣天數再提醒">
+                <Input
+                  name="quoteFollowupDays"
+                  type="number"
+                  min="1"
+                  max="90"
+                  required
+                  defaultValue={config.quoteFollowupDays}
+                />
+              </Field>
+            </div>
+          </ActionForm>
+        </div>
+      </Card>
 
       <Card title="報價流程">
         <div className="p-5">

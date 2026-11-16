@@ -1,13 +1,15 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 
 import { requireUser } from '@/auth'
 import { db } from '@/db'
 import { quotes, services } from '@/db/schema'
 import { logActivity } from '@/lib/activity'
 import { advanceByCycle, type BillingCycle } from '@/lib/dates'
+import { checkUploadFile, type CheckedFile } from '@/lib/upload-file'
+import { registerPayment } from '@/server/quotes/payment'
 import { cancelQuote, sendQuoteToClient } from '@/server/send-quote'
 import { type ActionState } from './helpers'
 
@@ -30,19 +32,9 @@ export async function sendQuote(
   const email = await requireUser()
   const id = read(formData, 'id')
 
-  const quote = await db.query.quotes.findFirst({ where: eq(quotes.id, id) })
-  if (!quote) return { error: '找不到這張報價單' }
-
-  // 狀態機守衛：已寄出的不該再寄一次
-  if (quote.status === 'sent' || quote.status === 'accepted') {
-    return { error: '這張報價單已經寄出過了，沒有重複寄送。' }
-  }
-  if (quote.status === 'cancelled') {
-    return { error: '這張報價單已取消，無法寄出。' }
-  }
-
+  // 狀態檢查、搶佔（防連點重複寄出）都在 sendQuoteToClient 裡
   const result = await sendQuoteToClient(id, email)
-  if (!result.ok) return { error: result.error }
+  if (!result.ok) return { error: result.error, violationType: result.violationType }
 
   revalidatePath('/quotes')
   revalidatePath(`/quotes/${id}`)
@@ -73,9 +65,14 @@ export async function markAccepted(
   const email = await requireUser()
   const id = read(formData, 'id')
 
+  // accepted_at 是專案報價「未收款提醒」的起算點，只記第一次同意的時間
   await db
     .update(quotes)
-    .set({ status: 'accepted', updatedAt: new Date() })
+    .set({
+      status: 'accepted',
+      acceptedAt: sql`coalesce(${quotes.acceptedAt}, ${new Date().toISOString()}::timestamptz)`,
+      updatedAt: new Date(),
+    })
     .where(eq(quotes.id, id))
   await db
     .update(services)
@@ -157,7 +154,11 @@ export async function markQuoteRenewed(
     }
     await tx
       .update(quotes)
-      .set({ status: 'accepted', updatedAt: new Date() })
+      .set({
+        status: 'accepted',
+        acceptedAt: sql`coalesce(${quotes.acceptedAt}, ${new Date().toISOString()}::timestamptz)`,
+        updatedAt: new Date(),
+      })
       .where(eq(quotes.id, id))
   })
 
@@ -167,4 +168,32 @@ export async function markQuoteRenewed(
   revalidatePath('/services')
   revalidatePath('/')
   return { ok: true }
+}
+
+/** 登記收款（可附匯款證明）。規則見 src/server/quotes/payment.ts */
+export async function registerPaymentAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const email = await requireUser()
+  const id = read(formData, 'id')
+
+  let proof: CheckedFile | undefined
+  const file = formData.get('proof')
+  if (file instanceof File && file.size > 0) {
+    const checked = await checkUploadFile(file)
+    if (!checked.ok) return { error: checked.error, violationType: 'INVALID_ARGUMENT' }
+    proof = checked.file
+  }
+
+  const result = await registerPayment(
+    id,
+    { paidOn: read(formData, 'paidOn'), paidAmount: read(formData, 'paidAmount'), proof },
+    email,
+  )
+  if (result.ok) {
+    revalidatePath(`/quotes/${id}`)
+    revalidatePath('/quotes')
+  }
+  return result
 }

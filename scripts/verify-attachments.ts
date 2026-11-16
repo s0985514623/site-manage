@@ -29,7 +29,7 @@ function eq(label: string, actual: unknown, expected: unknown) {
   }
 }
 
-/** 與 src/server/actions/attachments.ts 的 sniff 相同邏輯，用於獨立驗證 */
+/** 與 src/lib/upload-file.ts 的 sniff 相同邏輯，用於獨立驗證 */
 const MAGIC: { type: string; bytes: number[] }[] = [
   { type: 'application/pdf', bytes: [0x25, 0x50, 0x44, 0x46] },
   { type: 'image/jpeg', bytes: [0xff, 0xd8, 0xff] },
