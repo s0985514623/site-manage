@@ -1,0 +1,70 @@
+# CI：型別、lint、驗證腳本。
+# PR 時自己跑；push main 時由 deploy.yml 以 workflow_call 呼叫（不會跑兩次）。
+name: CI
+
+on:
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: 驗證
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: site_support
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: site_support
+          TZ: Asia/Taipei
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U site_support -d site_support"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://site_support:ci@localhost:5433/site_support
+      APP_URL: http://localhost:3000
+      AUTH_SECRET: ci-only-not-a-real-secret
+      # 驗證腳本會真的做 AES-256-GCM 加解密，所以這裡要是合法的 32 bytes base64
+      ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      CRON_SECRET: ci-only-not-a-real-secret
+      TZ: Asia/Taipei
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: TypeScript
+        run: npm run typecheck
+
+      - run: npm run lint
+
+      # 用 db:push 而不是 db:migrate：CI 只要一份當下 schema 的資料庫，不需要重播歷史
+      - name: 建立 schema 與種子資料
+        run: |
+          npm run db:push -- --force
+          npm run db:seed-company
+          npm run db:seed
+
+      # scripts/verify-*.ts 會實際寫入再清掉測試資料，並且在
+      # NODE_ENV=production 時拒絕執行，所以這裡不能設 NODE_ENV
+      - name: 驗證腳本
+        run: npm run verify

@@ -1,0 +1,13 @@
+# 加到共用 infra 的 Caddyfile（/opt/my-services/infra），照 accounting 區塊的寫法；
+# infra/.env 需有 SITE_MANAGER_DOMAIN=site-manager.ren-codes.com，且 Caddy 容器要加入 proxy_site-manager 網路。
+# 與 accounting 的差異：/api/cron/* 對外一律 404（排程由主機 systemd timer 在容器內呼叫，不經 Caddy）。
+
+{$SITE_MANAGER_DOMAIN} {
+	encode gzip
+	handle /api/cron/* {
+		respond 404
+	}
+	handle {
+		reverse_proxy site-manager-app:3000
+	}
+}

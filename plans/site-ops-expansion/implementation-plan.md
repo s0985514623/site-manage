@@ -60,7 +60,7 @@
 - `src/lib/cron.ts`：加 `runCronJob(name, request, handler)` 包裝（驗證 → 執行 → 成功才 ping）
 - `src/lib/gcal.ts`：`ensureCalendar(kind: 'expiry' | 'project')`、`upsertEvent` / `deleteEvent` 帶 calendar 參數
 - `src/server/projects/*`、`src/server/quotes/{send,followup,payment}.ts`、`src/server/line/{query,quick-add}.ts`、`src/server/ops/weekly-report.ts`
-- 新路由：`src/app/api/cron/{quote-followup,payment-followup,weekly-report}/route.ts`、`src/app/api/health/route.ts`
+- 新路由：`src/app/api/cron/{quote-followup,payment-followup,weekly-report}/route.ts`（健康檢查 `src/app/healthz/route.ts` 已於部署設定時完成）
 - 新頁面：`src/app/(dashboard)/projects/`（列表、新增、詳情含里程碑 / 狀態 / 轉維運表單 / 產生報價）
 
 ## 資料流分析
@@ -122,7 +122,7 @@ Rich Menu「新增專案」──▶ 建 line_conversations(step=choose_client, 
 
 ### F. 健康檢查
 ```
-GET /api/health ──▶ SELECT 1(逾時 3 秒) ──▶ 200 {status:ok}
+GET /healthz ──▶ SELECT 1(逾時 3 秒) ──▶ 200 {status:ok}
                           │
                           ▼
                   [失敗/逾時] ──▶ 503 {status:error}（不帶任何細節）
@@ -146,7 +146,7 @@ GET /api/health ──▶ SELECT 1(逾時 3 秒) ──▶ 200 {status:ok}
 | LINE 回覆 / 推播 | API 失敗 | 外部錯誤 | 記 log；排程類改 Email | 是（收到 Email） |
 | 排程 Email 備援也失敗 | Resend 失敗 | 外部錯誤 | notifications `ok=false` + error；cron 回應列出 errors；心跳照送（排程本身有跑） | 否 → 由 PHP 監控之外無告警：**接受**，回應 JSON 可查 |
 | `pingHeartbeat` | 心跳端點不通 | 外部錯誤 | 記 log，不影響排程 | 否 → PHP 端會因收不到心跳而告警（設計即如此） |
-| `/api/health` | DB 斷線 | 503 | 回 `{status:'error'}` | 是（給監控） |
+| `/healthz` | DB 斷線 | 503 | 回 `{status:'error'}` | 是（給監控） |
 
 無「處理方式=無 且 靜默」的 CRITICAL GAP。
 
@@ -219,16 +219,16 @@ GET /api/health ──▶ SELECT 1(逾時 3 秒) ──▶ 200 {status:ok}
 
 ### 第 5 階段：週報 / 健康檢查 / 心跳 / 排程設定（1–1.5 天，風險低）
 1. `src/server/ops/weekly-report.ts` + `src/app/api/cron/weekly-report/route.ts`
-2. `src/app/api/health/route.ts`（不經 `src/proxy.ts` 登入攔截，需確認 matcher 排除）
+2. ~~健康檢查~~：已完成，`GET /healthz`（`src/app/healthz/route.ts`，已加進 `src/proxy.ts` 公開路徑）。外部監控改打 `/healthz`
 3. 既有 5 支 cron（expiry-scan、quote-draft、gcal-sync、detect、uptime）改用 `runCronJob()` 送心跳
 4. `src/lib/env.ts`、`.env.example`：`HEARTBEAT_URL`、`HEARTBEAT_TOKEN`（選填）
-5. `scripts/vps-init.sh`：`/etc/cron.d/site-support` 加 `40 9 * * *` quote-followup、`45 9 * * *` payment-followup、`0 9 * * 1` weekly-report；並附「既有 VPS 手動補排程」說明（init 腳本不會重跑）
+5. `deploy/systemd/`：新增 `site-manager-cron-{quote-followup,payment-followup,weekly-report}.timer`（09:40 每日、09:45 每日、週一 09:00），沿用 `site-manager-cron@.service`；`deploy/README.md` 排程表同步更新，並寫明 VPS 上要手動 `install` + `systemctl enable --now`（`vps-init.sh` 已移除，部署改照共用 VPS 規格）
 - 對應 feature：`排程推送每週週報`、`外部監控查詢系統健康`
-- 驗收：全部 120 例綠、`test:coverage-map` 0 缺漏；VPS 上 `curl /api/health` 回 200
+- 驗收：全部 120 例綠、`test:coverage-map` 0 缺漏；`curl https://site-manager.ren-codes.com/healthz` 回 200
 
 ### 第 6 階段（獨立交付）：PHP 外部監控腳本（1 天，風險低）
 - 位置：`tools/php-monitor/`（不進 Next.js 建置；或另開 repo）
-- `heartbeat.php`（驗 token、記錄各排程最後 ping 時間到 SQLite / JSON）、`check.php`（cron 每 15 分鐘：逾時門檻 每日 26h / 每週 8 天 / 每小時 3h；`/api/health` 非 200 → LINE push + Email，同問題同日一次）、`config.example.php`、`README.md`
+- `heartbeat.php`（驗 token、記錄各排程最後 ping 時間到 SQLite / JSON）、`check.php`（cron 每 15 分鐘：逾時門檻 每日 26h / 每週 8 天 / 每小時 3h；`/healthz` 非 200 → LINE push + Email，同問題同日一次）、`config.example.php`、`README.md`
 - 測試：PHPUnit 或純 PHP 腳本測門檻計算與去重（不納入 Vitest）
 - 依賴：第 5 階段完成（心跳格式定案）
 - 驗收：停掉一支排程 26 小時內收到告警；關掉 VPS app 15 分鐘內收到告警；同日不重複
@@ -271,7 +271,7 @@ GET /api/health ──▶ SELECT 1(逾時 3 秒) ──▶ 200 {status:ok}
 - [ ] 既有 `npm run verify` 全綠
 - [ ] migration 0001 在正式資料副本上成功
 - [ ] CI verify job 跑 `npm test` + `test:coverage-map`，失敗會擋部署（D3）
-- [ ] VPS 有 8 支排程 + 備份，全部送心跳；`/api/health` 200
+- [ ] VPS 有 8 支排程 + 備份，全部送心跳；`/healthz` 200
 - [ ] PHP 監控能在門檻內告警
 
 ## 預估複雜度：高（總計約 11–14 個工作天，含 PHP 1 天）

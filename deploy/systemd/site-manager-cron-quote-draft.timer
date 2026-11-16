@@ -1,0 +1,11 @@
+# /etc/systemd/system/site-manager-cron-quote-draft.timer
+[Unit]
+Description=site-manager cron: quote-draft（每日 09:30 擬定續約報價草稿）
+
+[Timer]
+OnCalendar=*-*-* 09:30:00 Asia/Taipei
+Persistent=true
+Unit=site-manager-cron@quote-draft.service
+
+[Install]
+WantedBy=timers.target

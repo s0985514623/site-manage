@@ -91,10 +91,15 @@ RUN addgroup --system --gid 1001 nodejs \
 
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/migrate.mjs ./scripts/migrate.mjs
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/run-cron.mjs ./scripts/run-cron.mjs
 COPY --from=builder --chown=nextjs:nodejs /app/src/db/migrations ./src/db/migrations
 
 USER nextjs
 EXPOSE 3000
+
+# deploy/deploy.sh 等這個變成 healthy 才算部署成功，否則回滾到上一版
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 # standalone 產出的 server.js 會讀 PORT / HOSTNAME
 CMD ["node", "server.js"]

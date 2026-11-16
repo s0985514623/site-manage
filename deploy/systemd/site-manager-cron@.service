@@ -1,0 +1,17 @@
+# /etc/systemd/system/site-manager-cron@.service
+# 範本 unit：%i = /api/cron/ 後面的端點名稱（例：site-manager-cron@uptime.service）。
+# 在容器內呼叫，CRON_SECRET 只存在容器環境變數（/opt/my-services/apps/site-manager/.env），
+# 不出現在主機指令列。輸出看：journalctl -u 'site-manager-cron@*'
+[Unit]
+Description=site-manager cron: %i
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/my-services/apps/site-manager
+ExecStart=/usr/bin/docker compose -p site-manager -f /opt/my-services/apps/site-manager/docker-compose.yml exec -T app node scripts/run-cron.mjs %i
+# 最長的端點 maxDuration 300 秒，run-cron.mjs 本身 320 秒逾時
+TimeoutStartSec=360

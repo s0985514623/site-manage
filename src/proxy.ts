@@ -19,6 +19,7 @@ const SESSION_COOKIES = [
 function isPublic(pathname: string): boolean {
   return (
     pathname === '/login' ||
+    pathname === '/healthz' || // 健康檢查，只回 ok / error
     pathname.startsWith('/api/auth/') || // Auth.js 自己的流程
     pathname.startsWith('/api/cron/') || // 以 CRON_SECRET 驗證
     pathname.startsWith('/api/line/') // 以 LINE 簽章 + userId 白名單驗證

@@ -1,0 +1,11 @@
+# /etc/systemd/system/site-manager-cron-uptime.timer
+[Unit]
+Description=site-manager cron: uptime（每小時 :15 網站存活監控；錯過的不追跑）
+
+[Timer]
+OnCalendar=*-*-* *:15:00 Asia/Taipei
+Persistent=false
+Unit=site-manager-cron@uptime.service
+
+[Install]
+WantedBy=timers.target

@@ -15,7 +15,7 @@ info:
       - server-action：NextAuth session + ALLOWED_EMAILS
       - /api/cron/*  ：Authorization: Bearer CRON_SECRET（或 x-cron-secret）
       - /api/line/webhook：X-Line-Signature + LINE_ADMIN_USER_ID
-      - /api/health  ：不需驗證
+      - /healthz  ：不需驗證
 
 tags:
   - name: settings
@@ -393,7 +393,7 @@ paths:
         '200': { $ref: '#/components/responses/CronSummary' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
-  /api/health:
+  /healthz:
     get:
       tags: [ops]
       operationId: getHealth

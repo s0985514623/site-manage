@@ -1,0 +1,11 @@
+# /etc/systemd/system/site-manager-cron-gcal-sync.timer
+[Unit]
+Description=site-manager cron: gcal-sync（每日 04:00 Google 日曆對帳）
+
+[Timer]
+OnCalendar=*-*-* 04:00:00 Asia/Taipei
+Persistent=true
+Unit=site-manager-cron@gcal-sync.service
+
+[Install]
+WantedBy=timers.target

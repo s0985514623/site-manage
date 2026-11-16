@@ -15,7 +15,8 @@ const globalForDb = globalThis as unknown as {
 const client =
   globalForDb.__sitesupport_sql ??
   postgres(env.DATABASE_URL, {
-    max: 10,
+    // 共用 VPS 上三個 app 共用一個 PostgreSQL，每個 app 最多 5 條連線
+    max: 5,
     // 到期日欄位一律以 date 進出，連線時區固定台北避免任何隱式換算
     connection: { TimeZone: 'Asia/Taipei' },
   })

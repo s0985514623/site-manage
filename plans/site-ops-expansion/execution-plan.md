@@ -45,7 +45,7 @@
 |------|------|------|
 | create | 專案、里程碑、轉維運、寄出、收款的 Server Actions | 沿用既有 `src/server/actions/*` 慣例 |
 | create | /api/cron/quote-followup、payment-followup、weekly-report | 新排程端點 |
-| create | GET /api/health | 外部監控用，200 / 503 |
+| create | GET /healthz | 外部監控用，200 / 503 |
 | modify | /api/line/webhook | 加入 message 查詢 / 快速新增處理 |
 
 ## Phase 05-07: Implementation
@@ -61,7 +61,7 @@
 | 項目 | 說明 |
 |------|------|
 | 心跳接收端點 | 驗證心跳 token，記錄各排程最後 ping 時間 |
-| 檢查腳本（PHP 主機 cron 每 15 分鐘） | 心跳逾時（每日 26h / 每週 8 天 / 每小時 3h）或 VPS /api/health 非 200 → 告警 |
+| 檢查腳本（PHP 主機 cron 每 15 分鐘） | 心跳逾時（每日 26h / 每週 8 天 / 每小時 3h）或 VPS /healthz 非 200 → 告警 |
 | 告警 | 同時發 LINE push + Email；同一問題同日只告警一次 |
 | 需要的設定 | 心跳 token（與 VPS 共用）、LINE channel access token + 接收者 userId、告警 Email、VPS health URL、各排程名稱與門檻 |
 

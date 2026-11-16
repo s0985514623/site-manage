@@ -1,7 +1,7 @@
 @query
 Feature: 外部監控查詢系統健康
 
-  外部監控主機（用戶另一台 PHP 主機）每 15 分鐘呼叫 GET /api/health 確認 VPS 存活。
+  外部監控主機（用戶另一台 PHP 主機）每 15 分鐘呼叫 GET /healthz 確認 VPS 存活。
   排程心跳的逾時判斷與告警發送在 PHP 主機端執行，不在本 repo（見 execution-plan 獨立交付物）。
 
   Rule: 前置（狀態）- 不需登入即可呼叫，回應只包含整體狀態，不洩漏內部細節

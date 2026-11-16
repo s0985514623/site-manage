@@ -1,0 +1,12 @@
+# /etc/systemd/system/site-manager-backup.timer
+[Unit]
+Description=Daily backup of site-manager database (03:00 Asia/Taipei)
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 Asia/Taipei
+# 03:00 時若關機，開機後補做一次
+Persistent=true
+Unit=site-manager-backup.service
+
+[Install]
+WantedBy=timers.target
