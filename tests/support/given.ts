@@ -5,6 +5,7 @@ import { db } from '@/db'
 import {
   clients,
   contacts,
+  lineConversations,
   notifications,
   oauthTokens,
   projectMilestones,
@@ -235,4 +236,31 @@ afterEach(() => {
 /** mail_configured = false */
 export function 寄信服務未設定() {
   env.RESEND_API_KEY = ''
+}
+
+/* ---------------------------- LINE 快速新增 ---------------------------- */
+
+export async function LINE快速新增進度為(row: {
+  step: 'choose_client' | 'choose_category' | 'input_name' | 'choose_due_date'
+  client?: string
+  category?: string
+  name?: string
+  updatedAt: string
+}) {
+  const updatedAt = new Date(row.updatedAt)
+  await db.insert(lineConversations).values({
+    lineUserId: env.LINE_ADMIN_USER_ID,
+    step: row.step,
+    data: {
+      ...(row.client ? { clientId: await 客戶id(row.client) } : {}),
+      ...(row.category ? { category: row.category } : {}),
+      ...(row.name ? { name: row.name } : {}),
+    },
+    expiresAt: new Date(updatedAt.getTime() + 30 * 60_000),
+    updatedAt,
+  })
+}
+
+export async function LINE快速新增進度() {
+  return db.query.lineConversations.findFirst({ where: (t, { eq }) => eq(t.lineUserId, env.LINE_ADMIN_USER_ID) })
 }

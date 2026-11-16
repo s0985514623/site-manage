@@ -49,6 +49,14 @@ export const fakeNet = {
         .map((m) => m.text ?? ''),
     )
   },
+  /** LINE 回覆 / 推播最後一則訊息的快速回覆按鈕文字 */
+  lineQuickReplyLabels(): string[] {
+    const last = calls.line.at(-1)?.body as
+      | { messages?: Array<{ quickReply?: { items: Array<{ action: { label: string } }> } }> }
+      | undefined
+    const msg = last?.messages?.at(-1)
+    return msg?.quickReply?.items.map((i) => i.action.label) ?? []
+  },
   /** 寄出的信件 */
   mails(): Array<{ to: string[]; subject: string; html: string }> {
     return calls.resend.map((c) => c.body as { to: string[]; subject: string; html: string })

@@ -203,7 +203,10 @@
     - Webhook URL：`https://site-manager.ren-codes.com/api/line/webhook` → **Use webhook：On** → Verify
     - Webhook redelivery：**Off**
     - LINE Official Account Manager → 回應設定：關閉「自動回應訊息」
-    → 預期：Verify 成功；傳訊息給官方帳號會收到「系統運作中」
+    → 預期：Verify 成功；傳任何訊息給官方帳號會收到「要做什麼？」和四顆按鈕
+    - 建立聊天室下方的常駐選單（一次性，可重跑）：在開發機執行
+      `PS> $env:LINE_CHANNEL_ACCESS_TOKEN='<正式的 token>'; npm run line:richmenu`
+      → 預期：`✓ 已建立並設為預設選單`；手機重新打開聊天室會看到四格選單
 32. **Resend**：確認 `MAIL_FROM` 的網域已驗證（SPF / DKIM）→ 後台寄一封測試報價給自己
 
 ---

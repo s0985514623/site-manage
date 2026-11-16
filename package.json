@@ -30,7 +30,8 @@
     "verify:attachments": "tsx --conditions=react-server scripts/verify-attachments.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage-map": "tsx scripts/check-feature-coverage.ts"
+    "test:coverage-map": "tsx scripts/check-feature-coverage.ts",
+    "line:richmenu": "node scripts/line-richmenu.mjs"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.9.0",

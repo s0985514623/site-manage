@@ -108,20 +108,41 @@ export function isAdmin(userId: string | undefined): boolean {
 /* 訊息型別與建構                                                        */
 /* ------------------------------------------------------------------ */
 
+/** 快速回覆按鈕（訊息下方的圓角按鈕，最多 13 顆） */
+export type QuickReplyAction =
+  | { type: 'postback'; label: string; data: string; displayText?: string }
+  | { type: 'datetimepicker'; label: string; data: string; mode: 'date'; initial?: string; min?: string }
+
 export type LineMessage =
-  | { type: 'text'; text: string }
+  | { type: 'text'; text: string; quickReply?: { items: { type: 'action'; action: QuickReplyAction }[] } }
   | { type: 'flex'; altText: string; contents: unknown }
 
-export function text(value: string): LineMessage {
+export function text(value: string, buttons?: QuickReplyAction[]): LineMessage {
   // LINE 單則文字訊息上限 5000 字元
-  return { type: 'text', text: value.slice(0, 5000) }
+  const message: LineMessage = { type: 'text', text: value.slice(0, 5000) }
+  if (buttons?.length) {
+    message.quickReply = {
+      // 按鈕文字上限 20 字、最多 13 顆
+      items: buttons.slice(0, 13).map((action) => ({
+        type: 'action' as const,
+        action: { ...action, label: action.label.slice(0, 20) },
+      })),
+    }
+  }
+  return message
+}
+
+/** postback 按鈕：點下去會在聊天室顯示 displayText（預設同 label） */
+export function button(label: string, data: string, displayText = label): QuickReplyAction {
+  return { type: 'postback', label, data, displayText }
 }
 
 export type WebhookEvent = {
   type: string
   replyToken?: string
   source?: { userId?: string; type?: string }
-  postback?: { data?: string }
+  /** 日期選擇器回傳的日期放在 params.date */
+  postback?: { data?: string; params?: { date?: string } }
   message?: { type?: string; text?: string }
 }
 

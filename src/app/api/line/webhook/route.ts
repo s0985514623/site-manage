@@ -5,6 +5,7 @@ import {
 } from '@/lib/approvals'
 import { env, features } from '@/lib/env'
 import {
+  button,
   isAdmin,
   parsePostback,
   parseWebhook,
@@ -14,7 +15,21 @@ import {
   type WebhookEvent,
 } from '@/lib/line'
 import { getSettings } from '@/lib/settings'
+import { answerQuery } from '@/server/line/query'
+import { handleQuickAdd, isQuickAddPostback } from '@/server/line/quick-add'
 import { cancelQuote, sendQuoteToClient } from '@/server/send-quote'
+
+/** 主選單：與 Rich Menu 的四個按鈕相同（scripts/line-richmenu.mjs） */
+const MENU_BUTTONS = [
+  button('近期到期', 'query=expiring'),
+  button('待處理報價', 'query=quotes'),
+  button('進行中專案', 'query=projects'),
+  button('新增專案', 'add=project'),
+]
+
+function mainMenu() {
+  return text('要做什麼？', MENU_BUTTONS)
+}
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -82,9 +97,12 @@ async function handleEvent(event: WebhookEvent): Promise<void> {
       return
     }
     if (isAdmin(userId)) {
-      await reply(event.replyToken, [
-        text('系統運作中。報價單需要確認時會主動推播給你。'),
-      ])
+      // 快速新增進行中就交給問答流程（輸入名稱、關鍵字），否則回主選單按鈕
+      const answer =
+        event.message?.type === 'text'
+          ? await handleQuickAdd(userId!, { kind: 'message', text: event.message.text ?? '' })
+          : null
+      await reply(event.replyToken, answer ?? [mainMenu()])
     }
     return
   }
@@ -101,7 +119,31 @@ async function handleEvent(event: WebhookEvent): Promise<void> {
     return
   }
 
-  const { act, token } = parsePostback(event.postback?.data)
+  const data = event.postback?.data ?? ''
+
+  /* ---------- 選單：查詢（只讀，以 reply 回覆不耗推播額度） ---------- */
+  if (data.startsWith('query=')) {
+    await reply(event.replyToken, [text(await answerQuery(data.slice('query='.length)), MENU_BUTTONS)])
+    return
+  }
+  if (data === 'menu') {
+    await reply(event.replyToken, [mainMenu()])
+    return
+  }
+
+  /* ---------- 選單：快速新增專案（逐步問答） ---------- */
+  if (isQuickAddPostback(data)) {
+    const answer = await handleQuickAdd(userId!, {
+      kind: 'postback',
+      data,
+      date: event.postback?.params?.date,
+    })
+    await reply(event.replyToken, answer ?? [mainMenu()])
+    return
+  }
+
+  /* ---------- 報價確認按鈕 ---------- */
+  const { act, token } = parsePostback(data)
   if (!act || !token) {
     await reply(event.replyToken, [text('無法辨識的操作。')])
     return

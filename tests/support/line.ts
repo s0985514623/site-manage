@@ -24,3 +24,17 @@ export function postback(data: string, userId = 管理者()) {
 export function 文字訊息(text: string, userId = 管理者()) {
   return { type: 'message', replyToken: 'reply-token', source: { userId, type: 'user' }, message: { type: 'text', text } }
 }
+
+export const 非管理者 = 'Ustranger00000000000000000000000'
+
+/** 日期選擇器選了日期 */
+export function 選日期(date: string, userId = 管理者()) {
+  return { type: 'postback', replyToken: 'reply-token', source: { userId, type: 'user' }, postback: { data: 'due', params: { date } } }
+}
+
+/** 規格的「管理者在 LINE 傳送」：type = postback / message / datetime */
+export function 傳送(type: string, value: string, userId = 管理者()) {
+  if (type === 'message') return 文字訊息(value, userId)
+  if (type === 'datetime') return 選日期(value, userId)
+  return postback(value, userId)
+}
