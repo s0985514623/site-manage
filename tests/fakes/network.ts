@@ -1,3 +1,5 @@
+import { fakeGoogleCalendar } from './google-calendar'
+
 /**
  * 假的外部服務：攔截全域 fetch，依網址分給 LINE / Resend / Google / 心跳。
  *
@@ -26,6 +28,7 @@ export const fakeNet = {
     for (const k of Object.keys(calls) as ServiceName[]) calls[k] = []
     failing.clear()
     googleResponder = null
+    fakeGoogleCalendar.reset()
   },
   /** 讓某個服務回 500 */
   fail(name: ServiceName) {
@@ -79,9 +82,18 @@ export async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): P
     })
   }
 
+  if (service.name === 'google') {
+    if (googleResponder) {
+      return new Response(JSON.stringify(googleResponder(rec)), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    return fakeGoogleCalendar.handle(url, rec.method, rec.body)
+  }
+
   let payload: unknown = {}
   if (service.name === 'resend') payload = { id: `mail-${calls.resend.length}` }
-  if (service.name === 'google') payload = googleResponder?.(rec) ?? { id: `evt-${calls.google.length}` }
   return new Response(JSON.stringify(payload), {
     status: 200,
     headers: { 'content-type': 'application/json' },

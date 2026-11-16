@@ -29,6 +29,7 @@ export const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar'
 const TOKEN_URL = 'https://oauth2.googleapis.com/token'
 const API = 'https://www.googleapis.com/calendar/v3'
 const CALENDAR_NAME = '網站到期管理'
+const PROJECT_CALENDAR_NAME = '專案管理'
 
 /** 存取權杖有效一小時，快取起來避免每次操作都去換 */
 let cachedToken: { value: string; expiresAt: number } | null = null
@@ -242,21 +243,40 @@ async function call<T>(
 /* 日曆                                                                 */
 /* ------------------------------------------------------------------ */
 
+/**
+ * 兩個專屬日曆分開放：到期提醒與專案進度在 Google Calendar 裡可以各自開關顯示。
+ *   expiry  「網站到期管理」：服務項目到期日
+ *   project 「專案管理」：專案截止日與里程碑
+ */
+export type CalendarKind = 'expiry' | 'project'
+
+const CALENDARS: Record<
+  CalendarKind,
+  { name: string; column: 'gcalCalendarId' | 'gcalProjectCalendarId' }
+> = {
+  expiry: { name: CALENDAR_NAME, column: 'gcalCalendarId' },
+  project: { name: PROJECT_CALENDAR_NAME, column: 'gcalProjectCalendarId' },
+}
+
 /** 取得專屬日曆，沒有就建一個。回傳日曆 id */
-export async function ensureCalendar(): Promise<string> {
+export async function ensureCalendar(
+  kind: CalendarKind = 'expiry',
+): Promise<string> {
+  const { name, column } = CALENDARS[kind]
   const config = await getSettings()
-  if (config.gcalCalendarId) {
+  const currentId = config[column]
+  if (currentId) {
     // 確認日曆還在（可能被手動刪掉）
     const existing = await call<{ id: string }>(
-      `/calendars/${encodeURIComponent(config.gcalCalendarId)}`,
+      `/calendars/${encodeURIComponent(currentId)}`,
     )
-    if (existing) return config.gcalCalendarId
+    if (existing) return currentId
   }
 
   const created = await call<{ id: string }>('/calendars', {
     method: 'POST',
     body: JSON.stringify({
-      summary: CALENDAR_NAME,
+      summary: name,
       description:
         '由網站續約管理系統自動維護。手動修改的內容會在下次同步時被覆蓋。',
       timeZone: 'Asia/Taipei',
@@ -268,10 +288,55 @@ export async function ensureCalendar(): Promise<string> {
 
   await db
     .update(settings)
-    .set({ gcalCalendarId: created.id, updatedAt: new Date() })
+    .set({ [column]: created.id, updatedAt: new Date() })
     .where(eq(settings.id, 1))
 
   return created.id
+}
+
+/** 建立或更新任一日曆的事件，回傳事件 id */
+export async function upsertCalendarEvent(
+  kind: CalendarKind,
+  body: Record<string, unknown>,
+  existingEventId: string | null,
+): Promise<string> {
+  const cal = encodeURIComponent(await ensureCalendar(kind))
+
+  if (existingEventId) {
+    const updated = await call<{ id: string }>(
+      `/calendars/${cal}/events/${encodeURIComponent(existingEventId)}`,
+      { method: 'PATCH', body: JSON.stringify(body) },
+    )
+    // 事件被手動刪掉的話 call 回傳 null，往下重建一個
+    if (updated?.id) return updated.id
+  }
+
+  const created = await call<{ id: string }>(`/calendars/${cal}/events`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+  if (!created?.id) {
+    throw new GcalFailure({ kind: 'api_error', message: '建立事件失敗' })
+  }
+  return created.id
+}
+
+export async function deleteCalendarEvent(
+  kind: CalendarKind,
+  eventId: string,
+): Promise<void> {
+  const config = await getSettings()
+  const calendarId = config[CALENDARS[kind].column]
+  if (!calendarId) return
+  await call(
+    `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+    { method: 'DELETE' },
+  )
+}
+
+/** 全天事件：end.date 是「不含」的，所以要加一天 */
+export function allDay(date: DateStr) {
+  return { start: { date }, end: { date: addOneDay(date) } }
 }
 
 /* ------------------------------------------------------------------ */
@@ -343,41 +408,16 @@ function addOneDay(date: DateStr): DateStr {
   return d.toISOString().slice(0, 10)
 }
 
-/** 建立或更新事件，回傳事件 id */
+/** 建立或更新服務項目的到期事件（「網站到期管理」日曆），回傳事件 id */
 export async function upsertEvent(
   input: EventInput,
   existingEventId: string | null,
 ): Promise<string> {
-  const calendarId = await ensureCalendar()
-  const body = buildEvent(input)
-  const cal = encodeURIComponent(calendarId)
-
-  if (existingEventId) {
-    const updated = await call<{ id: string }>(
-      `/calendars/${cal}/events/${encodeURIComponent(existingEventId)}`,
-      { method: 'PATCH', body: JSON.stringify(body) },
-    )
-    // 事件被手動刪掉的話 call 回傳 null，往下重建一個
-    if (updated?.id) return updated.id
-  }
-
-  const created = await call<{ id: string }>(`/calendars/${cal}/events`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
-  if (!created?.id) {
-    throw new GcalFailure({ kind: 'api_error', message: '建立事件失敗' })
-  }
-  return created.id
+  return upsertCalendarEvent('expiry', buildEvent(input), existingEventId)
 }
 
 export async function deleteEvent(eventId: string): Promise<void> {
-  const config = await getSettings()
-  if (!config.gcalCalendarId) return
-  await call(
-    `/calendars/${encodeURIComponent(config.gcalCalendarId)}/events/${encodeURIComponent(eventId)}`,
-    { method: 'DELETE' },
-  )
+  await deleteCalendarEvent('expiry', eventId)
 }
 
 /** 目前的授權狀態，供設定頁顯示 */

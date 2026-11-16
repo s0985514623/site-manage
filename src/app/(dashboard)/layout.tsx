@@ -7,6 +7,7 @@ const NAV = [
   { href: '/', label: '儀表板' },
   { href: '/services', label: '到期總表' },
   { href: '/clients', label: '客戶' },
+  { href: '/projects', label: '專案' },
   { href: '/quotes', label: '報價單' },
   { href: '/settings', label: '設定' },
 ] as const

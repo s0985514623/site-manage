@@ -4,6 +4,7 @@ import { env } from '@/lib/env'
 import { calendarStatus } from '@/lib/gcal'
 import { emailLayout, escapeHtml, notifyOwner } from '@/lib/mailer'
 import { reconcileCalendar } from '@/server/gcal-sync'
+import { reconcileProjectCalendar } from '@/server/projects/calendar'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -32,6 +33,8 @@ export async function GET(request: Request) {
   }
 
   const result = await reconcileCalendar()
+  // 「專案管理」日曆：補上逐筆同步失敗、還沒有事件的專案與里程碑
+  const projects = result.reauthRequired ? { synced: 0 } : await reconcileProjectCalendar()
 
   if (result.reauthRequired) {
     const subject = '[網站續約] Google Calendar 授權已失效'
@@ -74,5 +77,5 @@ export async function GET(request: Request) {
     reauthRequired: result.reauthRequired,
   })
 
-  return Response.json({ ok: true, ...result })
+  return Response.json({ ok: true, ...result, projectEventsSynced: projects.synced })
 }
