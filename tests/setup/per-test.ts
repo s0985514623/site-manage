@@ -22,6 +22,8 @@ Object.assign(process.env, {
   LINE_CHANNEL_ACCESS_TOKEN: 'line-test-token',
   LINE_CHANNEL_SECRET: 'line-test-secret',
   LINE_ADMIN_USER_ID: 'Uadmin000000000000000000000000000',
+  HEARTBEAT_URL: 'https://heartbeat.test/ping',
+  HEARTBEAT_TOKEN: 'heartbeat-test-token',
   TZ: 'Asia/Taipei',
 })
 

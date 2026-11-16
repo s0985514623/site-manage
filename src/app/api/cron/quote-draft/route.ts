@@ -1,16 +1,16 @@
 import { eq } from 'drizzle-orm'
 
 import { db } from '@/db'
-import { quotes, services } from '@/db/schema'
+import { notifications, quotes, services } from '@/db/schema'
 import { logActivity } from '@/lib/activity'
 import { createApproval } from '@/lib/approvals'
-import { authorizeCron, isDryRun, unauthorized } from '@/lib/cron'
+import { runCronJob } from '@/lib/cron'
 import { buildItems, collectQuoteGroups, createQuoteForGroup } from '@/lib/quote-builder'
-import { formatPeriod } from '@/lib/dates'
+import { formatPeriod, today } from '@/lib/dates'
 import { env, features } from '@/lib/env'
 import { buildApprovalMessage } from '@/lib/quote-message'
-import { pushToOwner } from '@/lib/line'
-import { linePushAllowedCritical, countLinePush } from '@/lib/line-quota'
+import { pushToOwner, text } from '@/lib/line'
+import { countLinePush, linePushAllowed, linePushAllowedCritical } from '@/lib/line-quota'
 import { emailLayout, notifyOwner } from '@/lib/mailer'
 import { formatMoney } from '@/lib/money'
 import { quoteRecipients } from '@/server/queries'
@@ -29,9 +29,10 @@ export const maxDuration = 120
  * 任何資料、不推 LINE。調整觸發天數後務必先乾跑確認。
  */
 export async function GET(request: Request) {
-  if (!authorizeCron(request)) return unauthorized()
-  const dryRun = isDryRun(request)
+  return runCronJob('quote-draft', request, ({ dryRun }) => draft(dryRun))
+}
 
+async function draft(dryRun: boolean): Promise<Response> {
   const config = await getSettings()
   const scan = await collectQuoteGroups(config)
 
@@ -82,6 +83,9 @@ export async function GET(request: Request) {
       let pushed: string
       if (recipients.length === 0) {
         pushed = 'skipped: 此客戶沒有設定報價單收件人，請先補上聯絡人 Email'
+      } else if (!config.autoSendEnabled) {
+        // 手動寄送模式：草稿留在 draft，只推純通知（沒有寄出按鈕）請你到後台寄
+        pushed = await notifyDraftReady(quote)
       } else if (!features.lineApproval) {
         pushed = 'skipped: 尚未設定 LINE 審核，報價單留在草稿等你手動處理'
       } else if (!(await linePushAllowedCritical())) {
@@ -125,7 +129,9 @@ export async function GET(request: Request) {
    * 沒能推到 LINE 的草稿要用 Email 補通知，否則報價單會靜靜躺在
    * 後台直到項目過期——那正是這套系統要避免的事。
    */
-  const needsAttention = created.filter((c) => c.pushed !== 'sent')
+  const needsAttention = created.filter(
+    (c) => c.pushed !== 'sent' && c.pushed !== 'notified',
+  )
   if (needsAttention.length > 0) {
     const rows = needsAttention
       .map(
@@ -161,4 +167,50 @@ export async function GET(request: Request) {
     errors,
     skipped: scan.skipped,
   })
+}
+
+/**
+ * 手動寄送模式的草稿純通知。推播成功回 'notified'；
+ * 額度不足或 LINE 未設定時回 skipped，由呼叫端的彙總 Email 補通知。
+ */
+async function notifyDraftReady(quote: {
+  id: string
+  quoteNo: string
+  clientName: string
+  siteName: string
+  total: string
+  currency: string
+}): Promise<string> {
+  if (!features.lineApproval) {
+    return 'skipped: 尚未設定 LINE，報價草稿請至後台寄出'
+  }
+  if (!(await linePushAllowed())) {
+    return 'skipped: 本月 LINE 推播額度不足，報價草稿請至後台寄出'
+  }
+  const result = await pushToOwner([
+    text(
+      [
+        `[報價草稿] ${quote.quoteNo}`,
+        `${quote.clientName} · ${quote.siteName}`,
+        `合計 ${formatMoney(quote.total, quote.currency)}`,
+        '',
+        `目前為手動寄送模式，請至後台寄出：`,
+        `${env.APP_URL}/quotes/${quote.id}`,
+      ].join('\n'),
+    ),
+  ])
+  if (!result.ok) {
+    return `failed: ${'error' in result ? result.error : result.reason}`
+  }
+  await countLinePush(1)
+  await db
+    .insert(notifications)
+    .values({
+      kind: 'quote_draft',
+      quoteId: quote.id,
+      channel: 'line',
+      sentOn: today(),
+    })
+    .onConflictDoNothing()
+  return 'notified'
 }

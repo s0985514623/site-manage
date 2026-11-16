@@ -8,6 +8,7 @@ import { env } from '@/lib/env'
 import { emailLayout, escapeHtml, sendMail } from '@/lib/mailer'
 import { formatMoney } from '@/lib/money'
 import { renderQuotePdf } from '@/lib/pdf/render'
+import { isRenewalQuote, quoteSubjectName } from '@/lib/quote-display'
 import { getSettings } from '@/lib/settings'
 import { quoteRecipients } from './queries'
 
@@ -32,7 +33,7 @@ export async function sendQuoteToClient(
 ): Promise<SendResult> {
   const quote = await db.query.quotes.findFirst({
     where: eq(quotes.id, quoteId),
-    with: { client: true, site: true },
+    with: { client: true, site: true, project: true },
   })
   if (!quote) return { ok: false, error: '找不到這張報價單' }
 
@@ -58,16 +59,19 @@ export async function sendQuoteToClient(
 
   const company = settings.companyName ?? ''
   const total = formatMoney(quote.total, quote.currency)
+  const subject = quoteSubjectName(quote)
+  // 專案報價不是續約，信件不寫「續約」
+  const kind = isRenewalQuote(quote) ? '續約報價單' : '報價單'
 
   const mail = await sendMail({
     to: recipients,
     replyTo: settings.companyEmail ?? undefined,
-    subject: `${quote.client.name} ${quote.site.name} 續約報價單（${quote.quoteNo}）`,
+    subject: `${quote.client.name} ${subject} ${kind}（${quote.quoteNo}）`,
     html: emailLayout(
-      '續約報價單',
+      kind,
       `<p>${escapeHtml(quote.client.name)} 您好：</p>
 <p>
-  隨信附上「${escapeHtml(quote.site.name)}」的續約報價單，
+  隨信附上「${escapeHtml(subject)}」的${kind}，
   合計 <strong>${total}</strong>，報價有效期限至
   <strong>${formatTw(quote.validUntil)}</strong>。
 </p>
@@ -76,7 +80,7 @@ export async function sendQuoteToClient(
     ),
     text: `${quote.client.name} 您好：
 
-隨信附上「${quote.site.name}」的續約報價單（${quote.quoteNo}），
+隨信附上「${subject}」的${kind}（${quote.quoteNo}），
 合計 ${total}，報價有效期限至 ${formatTw(quote.validUntil)}。
 
 詳細項目與服務期間請見附件 PDF。如有任何問題，歡迎直接回覆本信。

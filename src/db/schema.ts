@@ -1,6 +1,7 @@
 import { relations, sql } from 'drizzle-orm'
 import {
   boolean,
+  check,
   customType,
   date,
   index,
@@ -13,6 +14,7 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
 
 /**
@@ -121,6 +123,37 @@ export const notifyChannelEnum = pgEnum('notify_channel', ['email', 'line'])
 
 export const detectSourceEnum = pgEnum('detect_source', ['whois', 'tls'])
 
+export const projectCategoryEnum = pgEnum('project_category', [
+  'new_site', // 新網站（完成時觸發轉維運）
+  'custom_plugin', // 客製化外掛
+  'bug_fix', // BUG 排除
+  'other',
+])
+
+export const projectStatusEnum = pgEnum('project_status', [
+  'not_started', // 待開始
+  'in_progress', // 進行中
+  'in_review', // 待驗收
+  'completed', // 已完成
+])
+
+/** 通知種類：決定 notifications 用哪一組去重鍵 */
+export const notifyKindEnum = pgEnum('notify_kind', [
+  'expiry', // 到期提醒（既有行為）
+  'quote_followup', // 報價未回覆追蹤
+  'payment_followup', // 未收款追蹤
+  'weekly_report', // 每週週報
+  'quote_draft', // 手動寄送模式下的草稿純通知
+])
+
+/** LINE 快速新增專案的逐步問答進度 */
+export const lineFlowStepEnum = pgEnum('line_flow_step', [
+  'choose_client',
+  'choose_category',
+  'input_name',
+  'choose_due_date',
+])
+
 /* ------------------------------------------------------------------ */
 /* 客戶                                                                 */
 /* ------------------------------------------------------------------ */
@@ -217,15 +250,21 @@ export const quotes = pgTable(
     clientId: uuid('client_id')
       .notNull()
       .references(() => clients.id, { onDelete: 'restrict' }),
-    /** 合併單位：同一網站的到期項目合成一張單 */
-    siteId: uuid('site_id')
-      .notNull()
-      .references(() => sites.id, { onDelete: 'restrict' }),
+    /**
+     * 合併單位：同一網站的到期項目合成一張單。
+     * 專案報價可以不綁網站（新網站專案建立時網站還不存在），
+     * 但 site_id 與 project_id 至少要有一個（見下方 CHECK）。
+     */
+    siteId: uuid('site_id').references(() => sites.id, { onDelete: 'restrict' }),
+    /** 由專案產生的報價單才有值。有報價單的專案不可刪除 */
+    projectId: uuid('project_id').references((): AnyPgColumn => projects.id, {
+      onDelete: 'restrict',
+    }),
     status: quoteStatusEnum('status').notNull().default('draft'),
 
-    /** 錨點 = 此網站最早到期的項目，合併窗口由此日往後推算 */
+    /** 錨點 = 此網站最早到期的項目，合併窗口由此日往後推算。專案報價沒有錨點 */
     anchorServiceId: uuid('anchor_service_id'),
-    anchorDate: day('anchor_date').notNull(),
+    anchorDate: day('anchor_date'),
 
     issueDate: day('issue_date').notNull(),
     validUntil: day('valid_until').notNull(),
@@ -250,6 +289,12 @@ export const quotes = pgTable(
     /** 實際寄達的收件人，寄出後留存以備查 */
     sentTo: jsonb('sent_to').$type<string[]>(),
 
+    /** 客戶同意時間。專案報價的未收款提醒由此起算 */
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    /** 收款日（不可晚於今天）與實收金額（> 0）。有值 = 已收款 */
+    paidOn: day('paid_on'),
+    paidAmount: money('paid_amount'),
+
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -258,6 +303,11 @@ export const quotes = pgTable(
     index('quotes_client_idx').on(t.clientId),
     index('quotes_site_idx').on(t.siteId),
     index('quotes_status_idx').on(t.status),
+    index('quotes_project_idx').on(t.projectId),
+    check(
+      'quotes_site_or_project',
+      sql`${t.siteId} is not null or ${t.projectId} is not null`,
+    ),
   ],
 )
 
@@ -359,6 +409,12 @@ export const services = pgTable(
     detectError: text('detect_error'),
 
     gcalEventId: text('gcal_event_id'),
+
+    /** 由哪個專案轉維運建立 */
+    sourceProjectId: uuid('source_project_id').references(
+      (): AnyPgColumn => projects.id,
+      { onDelete: 'set null' },
+    ),
 
     note: text('note'),
     createdAt: createdAt(),
@@ -551,6 +607,16 @@ export const settings = pgTable('settings', {
   quoteTerms: text('quote_terms'),
 
   gcalCalendarId: text('gcal_calendar_id'),
+  /** 「專案管理」日曆，首次同步專案時自動建立 */
+  gcalProjectCalendarId: text('gcal_project_calendar_id'),
+
+  /**
+   * 報價寄送模式。false = 手動寄（後台按「寄出」）；true = LINE 確認後自動寄。
+   * 新安裝預設手動寄；既有安裝由 migration 0001 設為 true，部署不改變行為（D1）。
+   */
+  autoSendEnabled: boolean('auto_send_enabled').notNull().default(false),
+  /** 報價寄出幾天沒回覆就提醒追蹤，之後每隔同樣天數再提醒 */
+  quoteFollowupDays: integer('quote_followup_days').notNull().default(7),
 
   /** LINE 免費方案推播額度有限，接近上限時改走 Email */
   linePushCount: integer('line_push_count').notNull().default(0),
@@ -570,11 +636,17 @@ export const notifications = pgTable(
   'notifications',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    serviceId: uuid('service_id')
-      .notNull()
-      .references(() => services.id, { onDelete: 'cascade' }),
-    /** 90 / 60 / 30 / 14 / 7 / 1，逾期為 -1（每日重複提醒） */
-    level: integer('level').notNull(),
+    kind: notifyKindEnum('kind').notNull().default('expiry'),
+    /** 到期提醒用。報價追蹤、週報等為空 */
+    serviceId: uuid('service_id').references(() => services.id, {
+      onDelete: 'cascade',
+    }),
+    /** 報價追蹤、收款追蹤、草稿通知用 */
+    quoteId: uuid('quote_id').references(() => quotes.id, {
+      onDelete: 'cascade',
+    }),
+    /** 到期提醒：90 / 60 / 30 / 14 / 7 / 1，逾期為 -1（每日重複提醒）。其他種類為 0 */
+    level: integer('level').notNull().default(0),
     channel: notifyChannelEnum('channel').notNull(),
     /** 逾期通知每天一則，用日期做去重鍵 */
     sentOn: day('sent_on').notNull(),
@@ -585,13 +657,22 @@ export const notifications = pgTable(
     error: text('error'),
   },
   (t) => [
-    uniqueIndex('notifications_dedupe_key').on(
-      t.serviceId,
-      t.level,
-      t.channel,
-      t.sentOn,
-    ),
+    /**
+     * 三組部分唯一索引，依通知對象分開去重（同一件事同一天只發一次）：
+     * 服務類（到期提醒）、報價類（追蹤 / 收款 / 草稿）、全域類（週報）。
+     * 用部分索引是因為 NULL 在一般唯一索引裡彼此不相等，擋不住重複。
+     */
+    uniqueIndex('notifications_dedupe_service')
+      .on(t.kind, t.serviceId, t.level, t.channel, t.sentOn)
+      .where(sql`service_id is not null`),
+    uniqueIndex('notifications_dedupe_quote')
+      .on(t.kind, t.quoteId, t.channel, t.sentOn)
+      .where(sql`quote_id is not null`),
+    uniqueIndex('notifications_dedupe_global')
+      .on(t.kind, t.channel, t.sentOn)
+      .where(sql`service_id is null and quote_id is null`),
     index('notifications_service_idx').on(t.serviceId),
+    index('notifications_quote_idx').on(t.quoteId),
   ],
 )
 
@@ -664,6 +745,78 @@ export const activityLogs = pgTable(
 )
 
 /* ------------------------------------------------------------------ */
+/* 專案（新網站製作 / 客製化外掛 / BUG 排除 / 其他）                        */
+/* ------------------------------------------------------------------ */
+
+export const projects = pgTable(
+  'projects',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'restrict' }),
+    /** 選填；必須屬於同一客戶 */
+    siteId: uuid('site_id').references(() => sites.id, { onDelete: 'set null' }),
+    name: text('name').notNull(),
+    category: projectCategoryEnum('category').notNull(),
+    /** 四個狀態可任意切換 */
+    status: projectStatusEnum('status').notNull().default('not_started'),
+    startDate: day('start_date'),
+    dueDate: day('due_date'),
+    description: text('description'),
+    estimatedAmount: money('estimated_amount'),
+    currency: text('currency').notNull().default('TWD'),
+    /** 轉維運完成時間；有值後不再顯示轉維運表單 */
+    handoverCompletedAt: timestamp('handover_completed_at', {
+      withTimezone: true,
+    }),
+    /** 截止日事件（「專案管理」日曆） */
+    gcalEventId: text('gcal_event_id'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index('projects_client_idx').on(t.clientId),
+    index('projects_status_due_idx').on(t.status, t.dueDate),
+    index('projects_category_idx').on(t.category),
+  ],
+)
+
+export const projectMilestones = pgTable(
+  'project_milestones',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    dueOn: day('due_on').notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    /** 每個里程碑一個「專案管理」日曆事件；完成後事件保留 */
+    gcalEventId: text('gcal_event_id'),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('project_milestones_project_idx').on(t.projectId)],
+)
+
+/** LINE 快速新增專案的逐步問答暫存；取消、完成或過期即刪除 */
+export const lineConversations = pgTable('line_conversations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  lineUserId: text('line_user_id').notNull().unique(),
+  step: lineFlowStepEnum('step').notNull(),
+  /** 已選的 clientId / category / name */
+  data: jsonb('data')
+    .$type<{ clientId?: string; category?: string; name?: string }>()
+    .notNull()
+    .default({}),
+  /** 最後互動 + 30 分鐘 */
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  updatedAt: updatedAt(),
+})
+
+/* ------------------------------------------------------------------ */
 /* Relations                                                            */
 /* ------------------------------------------------------------------ */
 
@@ -671,6 +824,7 @@ export const clientsRelations = relations(clients, ({ many }) => ({
   contacts: many(contacts),
   sites: many(sites),
   quotes: many(quotes),
+  projects: many(projects),
 }))
 
 export const contactsRelations = relations(contacts, ({ one }) => ({
@@ -685,6 +839,7 @@ export const sitesRelations = relations(sites, ({ one, many }) => ({
   services: many(services),
   quotes: many(quotes),
   uptimeChecks: many(uptimeChecks),
+  projects: many(projects),
 }))
 
 export const servicesRelations = relations(services, ({ one, many }) => ({
@@ -696,11 +851,19 @@ export const servicesRelations = relations(services, ({ one, many }) => ({
   }),
   credentials: many(credentials),
   notifications: many(notifications),
+  sourceProject: one(projects, {
+    fields: [services.sourceProjectId],
+    references: [projects.id],
+  }),
 }))
 
 export const quotesRelations = relations(quotes, ({ one, many }) => ({
   client: one(clients, { fields: [quotes.clientId], references: [clients.id] }),
   site: one(sites, { fields: [quotes.siteId], references: [sites.id] }),
+  project: one(projects, {
+    fields: [quotes.projectId],
+    references: [projects.id],
+  }),
   items: many(quoteItems),
   approvals: many(approvals),
   attachments: many(quoteAttachments),
@@ -740,7 +903,31 @@ export const notificationsRelations = relations(notifications, ({ one }) => ({
     fields: [notifications.serviceId],
     references: [services.id],
   }),
+  quote: one(quotes, {
+    fields: [notifications.quoteId],
+    references: [quotes.id],
+  }),
 }))
+
+export const projectsRelations = relations(projects, ({ one, many }) => ({
+  client: one(clients, {
+    fields: [projects.clientId],
+    references: [clients.id],
+  }),
+  site: one(sites, { fields: [projects.siteId], references: [sites.id] }),
+  milestones: many(projectMilestones),
+  quotes: many(quotes),
+}))
+
+export const projectMilestonesRelations = relations(
+  projectMilestones,
+  ({ one }) => ({
+    project: one(projects, {
+      fields: [projectMilestones.projectId],
+      references: [projects.id],
+    }),
+  }),
+)
 
 export const uptimeChecksRelations = relations(uptimeChecks, ({ one }) => ({
   site: one(sites, { fields: [uptimeChecks.siteId], references: [sites.id] }),
@@ -770,3 +957,7 @@ export type NewPlan = typeof plans.$inferInsert
 export type Settings = typeof settings.$inferSelect
 export type Notification = typeof notifications.$inferSelect
 export type UptimeCheck = typeof uptimeChecks.$inferSelect
+export type Project = typeof projects.$inferSelect
+export type NewProject = typeof projects.$inferInsert
+export type ProjectMilestone = typeof projectMilestones.$inferSelect
+export type LineConversation = typeof lineConversations.$inferSelect

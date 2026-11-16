@@ -3,6 +3,7 @@ import { asc, desc, eq } from 'drizzle-orm'
 
 import { db } from '@/db'
 import { contacts, quoteItems, quotes } from '@/db/schema'
+import { quoteSubjectName } from '../quote-display'
 import { getSettings } from '../settings'
 import { QuoteDocument } from './QuoteDocument'
 
@@ -21,6 +22,7 @@ export async function renderQuotePdf(quoteId: string): Promise<{
     with: {
       client: true,
       site: true,
+      project: true,
       items: { orderBy: [asc(quoteItems.sortOrder)] },
     },
   })
@@ -39,7 +41,7 @@ export async function renderQuotePdf(quoteId: string): Promise<{
 
   const buffer = await renderToBuffer(
     <QuoteDocument
-      quote={{ ...quote, siteName: quote.site.name }}
+      quote={{ ...quote, siteName: quoteSubjectName(quote) }}
       settings={settings}
       contact={contact ?? undefined}
     />,

@@ -70,6 +70,7 @@ export async function collectNotices(
     .from(notifications)
     .where(
       and(
+        eq(notifications.kind, 'expiry'),
         eq(notifications.sentOn, scannedAt),
         eq(notifications.channel, channel),
         eq(notifications.ok, true),
@@ -106,6 +107,7 @@ export async function recordNotifications(
     .insert(notifications)
     .values(
       notices.map((n) => ({
+        kind: 'expiry' as const,
         serviceId: n.service.id,
         level: n.level,
         channel,

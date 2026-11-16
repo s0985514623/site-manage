@@ -55,6 +55,7 @@ async function getQuote(id: string) {
     with: {
       client: true,
       site: true,
+      project: true,
       items: { orderBy: [asc(quoteItems.sortOrder)] },
       attachments: {
         // 刻意不取 data：那是檔案本體，開個頁面不該把幾 MB 讀進記憶體
@@ -134,13 +135,28 @@ export default async function QuoteDetailPage({
             >
               {quote.client.name}
             </Link>
-            <span>·</span>
-            <Link
-              href={`/sites/${quote.siteId}`}
-              className="hover:text-accent hover:underline"
-            >
-              {quote.site.name}
-            </Link>
+            {quote.site && (
+              <>
+                <span>·</span>
+                <Link
+                  href={`/sites/${quote.site.id}`}
+                  className="hover:text-accent hover:underline"
+                >
+                  {quote.site.name}
+                </Link>
+              </>
+            )}
+            {quote.project && (
+              <>
+                <span>·</span>
+                <Link
+                  href={`/projects/${quote.project.id}`}
+                  className="hover:text-accent hover:underline"
+                >
+                  專案：{quote.project.name}
+                </Link>
+              </>
+            )}
           </span>
         }
         action={
@@ -176,7 +192,7 @@ export default async function QuoteDetailPage({
           <Meta label="報價有效至" value={formatTw(quote.validUntil)} />
           <Meta
             label="合併基準日"
-            value={formatTw(quote.anchorDate)}
+            value={quote.anchorDate ? formatTw(quote.anchorDate) : '—（專案報價）'}
           />
           <Meta
             label="合計"

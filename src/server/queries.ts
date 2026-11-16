@@ -7,6 +7,7 @@ import {
   credentials,
   quotes,
   services,
+  projects,
   sites,
 } from '@/db/schema'
 
@@ -112,10 +113,14 @@ export async function listQuotes() {
       clientName: clients.name,
       siteName: sites.name,
       siteId: sites.id,
+      projectId: quotes.projectId,
+      projectName: projects.name,
     })
     .from(quotes)
     .innerJoin(clients, eq(quotes.clientId, clients.id))
-    .innerJoin(sites, eq(quotes.siteId, sites.id))
+    // left join：專案報價可以沒有網站，inner join 會讓它從列表消失（R1）
+    .leftJoin(sites, eq(quotes.siteId, sites.id))
+    .leftJoin(projects, eq(quotes.projectId, projects.id))
     .orderBy(desc(quotes.createdAt))
 }
 

@@ -1,3 +1,4 @@
+import { pingHeartbeat } from './heartbeat'
 import { env } from './env'
 import { safeEqual } from './crypto'
 
@@ -30,4 +31,20 @@ export function unauthorized(): Response {
 export function isDryRun(request: Request): boolean {
   const value = new URL(request.url).searchParams.get('dryRun')
   return value === '1' || value === 'true'
+}
+
+/**
+ * 排程端點的共用外殼：驗證密鑰 → 執行 → 成功（2xx 且非乾跑）才送心跳。
+ * 心跳失敗不影響回應（見 heartbeat.ts）。
+ */
+export async function runCronJob(
+  name: string,
+  request: Request,
+  handler: (ctx: { dryRun: boolean }) => Promise<Response>,
+): Promise<Response> {
+  if (!authorizeCron(request)) return unauthorized()
+  const dryRun = isDryRun(request)
+  const response = await handler({ dryRun })
+  if (response.ok && !dryRun) await pingHeartbeat(name)
+  return response
 }

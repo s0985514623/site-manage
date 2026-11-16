@@ -6,6 +6,7 @@ import { formatPeriod, formatTw } from './dates'
 import { env } from './env'
 import type { LineMessage } from './line'
 import { formatMoney } from './money'
+import { quoteSubjectName } from './quote-display'
 
 /**
  * 推給你確認的報價單 Flex Message。
@@ -52,6 +53,7 @@ export async function buildApprovalMessage(
     with: {
       client: true,
       site: true,
+      project: true,
       items: { orderBy: [asc(quoteItems.sortOrder)] },
     },
   })
@@ -101,7 +103,7 @@ export async function buildApprovalMessage(
 
   return {
     type: 'flex',
-    altText: `[報價確認] ${quote.client.name} · ${quote.site.name} ${formatMoney(quote.total, quote.currency)}`,
+    altText: `[報價確認] ${quote.client.name} · ${quoteSubjectName(quote)} ${formatMoney(quote.total, quote.currency)}`,
     contents: {
       type: 'bubble',
       size: 'giga',
@@ -134,13 +136,13 @@ export async function buildApprovalMessage(
         paddingAll: 'lg',
         contents: [
           row('客戶', quote.client.name),
-          row('網站', quote.site.name),
+          row(quote.siteId ? '網站' : '專案', quoteSubjectName(quote)),
           row('有效至', formatTw(quote.validUntil)),
 
           { type: 'separator', margin: 'lg', color: COLORS.line },
           {
             type: 'text',
-            text: `續約項目（${quote.items.length}）`,
+            text: `${quote.projectId ? '報價' : '續約'}項目（${quote.items.length}）`,
             size: 'xs',
             color: COLORS.muted,
             margin: 'lg',

@@ -44,6 +44,9 @@ const integrationSchema = z.object({
   LINE_CHANNEL_ACCESS_TOKEN: z.string().default(''),
   LINE_CHANNEL_SECRET: z.string().default(''),
   LINE_ADMIN_USER_ID: z.string().default(''),
+  /** 外部監控主機的心跳端點（PHP）。留空則不送心跳 */
+  HEARTBEAT_URL: z.string().default(''),
+  HEARTBEAT_TOKEN: z.string().default(''),
 })
 
 function load() {
@@ -68,15 +71,29 @@ export const allowedEmails = env.ALLOWED_EMAILS.split(',')
   .map((s) => s.trim().toLowerCase())
   .filter(Boolean)
 
-/** 各項整合是否已設定完成，未設定的功能會優雅降級而非拋錯 */
+/**
+ * 各項整合是否已設定完成，未設定的功能會優雅降級而非拋錯。
+ * 用 getter 每次讀 env：測試可以直接改 env 的值切換「已設定 / 未設定」。
+ */
 export const features = {
-  googleLogin: Boolean(env.AUTH_GOOGLE_ID && env.AUTH_GOOGLE_SECRET),
-  email: Boolean(env.RESEND_API_KEY && env.MAIL_FROM),
-  line: Boolean(env.LINE_CHANNEL_ACCESS_TOKEN && env.LINE_CHANNEL_SECRET),
+  get googleLogin() {
+    return Boolean(env.AUTH_GOOGLE_ID && env.AUTH_GOOGLE_SECRET)
+  },
+  get email() {
+    return Boolean(env.RESEND_API_KEY && env.MAIL_FROM)
+  },
+  get line() {
+    return Boolean(env.LINE_CHANNEL_ACCESS_TOKEN && env.LINE_CHANNEL_SECRET)
+  },
   /** 只有設定了管理者 userId 才允許用 LINE 批准寄信給客戶 */
-  lineApproval: Boolean(
-    env.LINE_CHANNEL_ACCESS_TOKEN &&
-      env.LINE_CHANNEL_SECRET &&
-      env.LINE_ADMIN_USER_ID,
-  ),
-} as const
+  get lineApproval() {
+    return Boolean(
+      env.LINE_CHANNEL_ACCESS_TOKEN &&
+        env.LINE_CHANNEL_SECRET &&
+        env.LINE_ADMIN_USER_ID,
+    )
+  },
+  get heartbeat() {
+    return Boolean(env.HEARTBEAT_URL)
+  },
+}

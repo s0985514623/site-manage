@@ -64,7 +64,7 @@ export default async function QuotesPage() {
                   <Td>
                     {row.clientName}
                     <div className="mt-0.5 text-xs text-muted">
-                      {row.siteName}
+                      {row.siteName ?? (row.projectName && `專案：${row.projectName}`)}
                     </div>
                   </Td>
                   <Td className="tabular text-muted">
