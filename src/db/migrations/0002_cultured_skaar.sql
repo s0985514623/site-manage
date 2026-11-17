@@ -1,0 +1,1 @@
+ALTER TABLE "project_milestones" ADD COLUMN "start_on" date;

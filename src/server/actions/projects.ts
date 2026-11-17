@@ -102,7 +102,7 @@ export async function addMilestoneAction(
   const projectId = read(formData, 'projectId')
   const result = await addMilestone(
     projectId,
-    { name: read(formData, 'name'), dueOn: read(formData, 'dueOn') },
+    { name: read(formData, 'name'), startOn: read(formData, 'startOn'), dueOn: read(formData, 'dueOn') },
     email,
   )
   if (result.ok) revalidatePath(`/projects/${projectId}`)
@@ -116,7 +116,7 @@ export async function updateMilestoneAction(
   const email = await requireUser()
   const result = await updateMilestone(
     read(formData, 'id'),
-    { name: read(formData, 'name'), dueOn: read(formData, 'dueOn') },
+    { name: read(formData, 'name'), startOn: read(formData, 'startOn'), dueOn: read(formData, 'dueOn') },
     email,
   )
   if (result.ok) revalidatePath(`/projects/${read(formData, 'projectId')}`)

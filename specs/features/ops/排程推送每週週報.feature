@@ -42,6 +42,22 @@ Feature: 排程推送每週週報
       And LINE 推播給管理者的訊息數應為 1
       And LINE 推播內容不應包含 "基本方案"
 
+  Rule: 後置（回應）- 與本週重疊的時程（開始日或結束日落在本週、或橫跨本週）列在「時程」
+
+    Example: 本週進行中的時程列入週報
+      Given 系統中有以下專案：
+        | name     | client | site | category | status      | start_date | due_date   | handover_completed_at |
+        | 青禾新官網 | 青禾設計 |      | new_site | in_progress | 2026-11-01 | 2026-12-31 |                       |
+      And 系統中有以下里程碑：
+        | project  | name   | start_on   | due_on     | completed_at |
+        | 青禾新官網 | 前端開發 | 2026-11-10 | 2026-12-10 |              |
+        | 青禾新官網 | 上線準備 | 2026-12-15 | 2026-12-20 |              |
+      When 排程執行「weekly-report」
+      Then LINE 應推播給管理者以下訊息：
+        | kind | contains                    |
+        | 週報 | 時程：前端開發 11/10–12/10 |
+      And LINE 推播內容不應包含 "上線準備"
+
   Rule: 後置（狀態）- 無任何待處理事項時仍推送「本週無待辦」，兼作系統存活訊號
 
     Example: 沒有待辦時推送本週無待辦

@@ -790,9 +790,15 @@ export const projectMilestones = pgTable(
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
+    /**
+     * 開始日（選填）。有值 = 一段時程（例：前端開發 11/20–12/10），
+     * 日曆上是跨日事件；空 = 單日里程碑（例：設計稿確認），due_on 當天。
+     */
+    startOn: day('start_on'),
+    /** 結束日（時程）或當天（里程碑） */
     dueOn: day('due_on').notNull(),
     completedAt: timestamp('completed_at', { withTimezone: true }),
-    /** 每個里程碑一個「專案管理」日曆事件；完成後事件保留 */
+    /** 每個時程 / 里程碑一個「專案管理」日曆事件；完成後事件保留 */
     gcalEventId: text('gcal_event_id'),
     sortOrder: integer('sort_order').notNull().default(0),
     createdAt: createdAt(),

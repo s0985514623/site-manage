@@ -334,9 +334,12 @@ export async function deleteCalendarEvent(
   )
 }
 
-/** 全天事件：end.date 是「不含」的，所以要加一天 */
-export function allDay(date: DateStr) {
-  return { start: { date }, end: { date: addOneDay(date) } }
+/**
+ * 全天事件：end.date 是「不含」的，所以要加一天。
+ * 給 lastDate 就是跨日事件（例：前端開發 11/20–12/10，12/10 當天也包含在內）。
+ */
+export function allDay(date: DateStr, lastDate: DateStr = date) {
+  return { start: { date }, end: { date: addOneDay(lastDate) } }
 }
 
 /* ------------------------------------------------------------------ */

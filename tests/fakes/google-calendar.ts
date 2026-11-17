@@ -3,7 +3,7 @@
  * 「『專案管理』日曆應有以下事件」。只實作 src/lib/gcal.ts 用到的端點。
  */
 
-type FakeEvent = { id: string; summary: string; date: string; body: Record<string, unknown> }
+type FakeEvent = { id: string; summary: string; date: string; endDate: string; body: Record<string, unknown> }
 type FakeCalendar = { id: string; summary: string; events: Map<string, FakeEvent> }
 
 let calendars = new Map<string, FakeCalendar>()
@@ -17,9 +17,18 @@ function json(status: number, payload?: unknown): Response {
   })
 }
 
+/** Google 的全天事件 end.date 不含當天；這裡換回「最後一天」方便斷言 */
+function lastDay(exclusiveEnd: string | undefined): string {
+  if (!exclusiveEnd) return ''
+  const d = new Date(`${exclusiveEnd}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() - 1)
+  return d.toISOString().slice(0, 10)
+}
+
 function toEvent(id: string, body: Record<string, unknown>): FakeEvent {
   const start = body.start as { date?: string } | undefined
-  return { id, summary: String(body.summary ?? ''), date: start?.date ?? '', body }
+  const end = body.end as { date?: string } | undefined
+  return { id, summary: String(body.summary ?? ''), date: start?.date ?? '', endDate: lastDay(end?.date), body }
 }
 
 export const fakeGoogleCalendar = {
@@ -28,10 +37,10 @@ export const fakeGoogleCalendar = {
     seq = 0
   },
   /** 依日曆名稱（「專案管理」/「網站到期管理」）列出事件 */
-  events(calendarName: string): Array<{ title: string; date: string; id: string }> {
+  events(calendarName: string): Array<{ title: string; date: string; endDate: string; id: string }> {
     const cal = [...calendars.values()].find((c) => c.summary === calendarName)
     if (!cal) return []
-    return [...cal.events.values()].map((e) => ({ title: e.summary, date: e.date, id: e.id }))
+    return [...cal.events.values()].map((e) => ({ title: e.summary, date: e.date, endDate: e.endDate, id: e.id }))
   },
 
   handle(url: URL, method: string, body: unknown): Response {

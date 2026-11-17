@@ -1,4 +1,4 @@
-import { and, asc, between, desc, eq, inArray, isNull, ne } from 'drizzle-orm'
+import { and, asc, between, desc, eq, gte, inArray, isNull, lte, ne, sql } from 'drizzle-orm'
 
 import { db } from '@/db'
 import { notifications, projectMilestones, projects, quotes, services } from '@/db/schema'
@@ -43,10 +43,17 @@ export async function buildWeeklyReport(on: string = today()): Promise<string[]>
       .from(projects)
       .where(and(ne(projects.status, 'completed'), between(projects.dueDate, start, end)))
       .orderBy(asc(projects.dueDate)),
+    // 與本週重疊：開始日（里程碑用當天）<= 週日，且結束日 >= 週一
     db
-      .select({ name: projectMilestones.name, dueOn: projectMilestones.dueOn })
+      .select({ name: projectMilestones.name, startOn: projectMilestones.startOn, dueOn: projectMilestones.dueOn })
       .from(projectMilestones)
-      .where(and(isNull(projectMilestones.completedAt), between(projectMilestones.dueOn, start, end)))
+      .where(
+        and(
+          isNull(projectMilestones.completedAt),
+          lte(sql`coalesce(${projectMilestones.startOn}, ${projectMilestones.dueOn})`, end),
+          gte(projectMilestones.dueOn, start),
+        ),
+      )
       .orderBy(asc(projectMilestones.dueOn)),
   ])
 
@@ -62,7 +69,12 @@ export async function buildWeeklyReport(on: string = today()): Promise<string[]>
   if (unpaid.length) lines.push(`未收款報價：${list(unpaid, (q) => q.quoteNo)}`)
 
   if (projectRows.length) lines.push(`專案截止：${list(projectRows, (p) => `${p.name} ${shortDate(p.dueDate!)}`)}`)
-  if (milestoneRows.length) lines.push(`里程碑：${list(milestoneRows, (m) => `${m.name} ${shortDate(m.dueOn)}`)}`)
+  const ranges = milestoneRows.filter((m) => m.startOn)
+  const points = milestoneRows.filter((m) => !m.startOn)
+  if (ranges.length) {
+    lines.push(`時程：${list(ranges, (m) => `${m.name} ${shortDate(m.startOn!)}–${shortDate(m.dueOn)}`)}`)
+  }
+  if (points.length) lines.push(`里程碑：${list(points, (m) => `${m.name} ${shortDate(m.dueOn)}`)}`)
 
   return lines
 }

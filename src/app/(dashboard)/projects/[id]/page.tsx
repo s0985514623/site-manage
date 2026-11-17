@@ -38,6 +38,34 @@ import { ProjectQuoteSection } from './quote-section'
 
 export const dynamic = 'force-dynamic'
 
+/** 名稱欄的建議選項，可以直接打其他名稱 */
+const PHASE_SUGGESTIONS = ['需求訪談', '設計', '設計稿確認', '前端開發', '後端開發', '內容建置', '測試驗收', '上線']
+
+/** 時程 / 里程碑欄位：開始日留空就是單日里程碑 */
+function ScheduleFields({
+  name,
+  startOn,
+  dueOn,
+}: {
+  name?: string
+  startOn?: string | null
+  dueOn?: string
+}) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-3">
+      <Field label="名稱" required>
+        <Input name="name" required defaultValue={name} placeholder="前端開發" list="phase-suggestions" />
+      </Field>
+      <Field label="開始日" hint="留空 = 單日里程碑">
+        <Input type="date" name="startOn" defaultValue={startOn ?? ''} />
+      </Field>
+      <Field label="結束日" required>
+        <Input type="date" name="dueOn" required defaultValue={dueOn} />
+      </Field>
+    </div>
+  )
+}
+
 async function getProject(id: string) {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return undefined
   return db.query.projects.findFirst({
@@ -127,91 +155,96 @@ export default async function ProjectDetailPage({ params }: PageProps<'/projects
       </Card>
 
       <Card
-        title="里程碑"
-        description="每個里程碑都會寫入 Google「專案管理」日曆，完成後事件保留"
+        title="時程與里程碑"
+        description="可以自由新增多段時程（例：前端開發 11/20–12/10），每段都會以跨日事件寫入 Google「專案管理」日曆；只填結束日就是單日里程碑"
       >
+        <datalist id="phase-suggestions">
+          {PHASE_SUGGESTIONS.map((p) => (
+            <option key={p} value={p} />
+          ))}
+        </datalist>
         {milestones.length === 0 ? (
-          <EmptyState title="還沒有里程碑" description="例如：設計稿確認、上線、驗收" />
+          <EmptyState
+            title="還沒有時程"
+            description="例如：需求訪談、設計、前端開發、後端開發、測試驗收、上線"
+          />
         ) : (
           <Table>
             <thead>
               <tr>
-                <Th>里程碑</Th>
-                <Th>日期</Th>
+                <Th>名稱</Th>
+                <Th>期間</Th>
                 <Th />
               </tr>
             </thead>
             <tbody>
-              {milestones.map((m) => (
-                <tr key={m.id}>
-                  <Td>
-                    <span className={m.completedAt ? 'text-muted line-through' : 'font-medium'}>
-                      {m.name}
-                    </span>
-                    {!m.completedAt && m.dueOn < now && (
-                      <span className="ml-2">
-                        <Badge tone="overdue">逾期</Badge>
+              {milestones.map((m) => {
+                const running = !m.completedAt && m.startOn && m.startOn <= now && now <= m.dueOn
+                return (
+                  <tr key={m.id}>
+                    <Td>
+                      <span className={m.completedAt ? 'text-muted line-through' : 'font-medium'}>
+                        {m.name}
                       </span>
-                    )}
-                    {!m.gcalEventId && (
-                      <span className="ml-2">
-                        <Badge tone="warning">日曆未同步</Badge>
-                      </span>
-                    )}
-                  </Td>
-                  <Td className="tabular">{formatTw(m.dueOn)}</Td>
-                  <Td>
-                    <div className="flex flex-wrap items-start justify-end gap-2">
-                      <ActionForm
-                        action={toggleMilestoneAction}
-                        submitLabel={m.completedAt ? '取消完成' : '標記完成'}
-                        submitVariant="secondary"
-                        className="[&>div]:mt-0"
-                      >
-                        <input type="hidden" name="id" value={m.id} />
-                        <input type="hidden" name="projectId" value={project.id} />
-                      </ActionForm>
-                      <Disclosure label="修改">
-                        <ActionForm action={updateMilestoneAction} submitLabel="儲存">
+                      <span className="ml-2 text-xs text-muted">{m.startOn ? '時程' : '里程碑'}</span>
+                      {running && (
+                        <span className="ml-2">
+                          <Badge tone="accent">進行中</Badge>
+                        </span>
+                      )}
+                      {!m.completedAt && m.dueOn < now && (
+                        <span className="ml-2">
+                          <Badge tone="overdue">逾期</Badge>
+                        </span>
+                      )}
+                      {!m.gcalEventId && (
+                        <span className="ml-2">
+                          <Badge tone="warning">日曆未同步</Badge>
+                        </span>
+                      )}
+                    </Td>
+                    <Td className="tabular whitespace-nowrap">
+                      {m.startOn ? `${formatTw(m.startOn)} – ${formatTw(m.dueOn)}` : formatTw(m.dueOn)}
+                    </Td>
+                    <Td>
+                      <div className="flex flex-wrap items-start justify-end gap-2">
+                        <ActionForm
+                          action={toggleMilestoneAction}
+                          submitLabel={m.completedAt ? '取消完成' : '標記完成'}
+                          submitVariant="secondary"
+                          className="[&>div]:mt-0"
+                        >
                           <input type="hidden" name="id" value={m.id} />
                           <input type="hidden" name="projectId" value={project.id} />
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <Field label="名稱" required>
-                              <Input name="name" required defaultValue={m.name} />
-                            </Field>
-                            <Field label="日期" required>
-                              <Input type="date" name="dueOn" required defaultValue={m.dueOn} />
-                            </Field>
-                          </div>
                         </ActionForm>
-                      </Disclosure>
-                      <ConfirmForm
-                        action={deleteMilestoneAction}
-                        label="刪除"
-                        confirmLabel="確定刪除"
-                        message="日曆上的事件也會一併刪除。"
-                      >
-                        <input type="hidden" name="id" value={m.id} />
-                        <input type="hidden" name="projectId" value={project.id} />
-                      </ConfirmForm>
-                    </div>
-                  </Td>
-                </tr>
-              ))}
+                        <Disclosure label="修改">
+                          <ActionForm action={updateMilestoneAction} submitLabel="儲存">
+                            <input type="hidden" name="id" value={m.id} />
+                            <input type="hidden" name="projectId" value={project.id} />
+                            <ScheduleFields name={m.name} startOn={m.startOn} dueOn={m.dueOn} />
+                          </ActionForm>
+                        </Disclosure>
+                        <ConfirmForm
+                          action={deleteMilestoneAction}
+                          label="刪除"
+                          confirmLabel="確定刪除"
+                          message="日曆上的事件也會一併刪除。"
+                        >
+                          <input type="hidden" name="id" value={m.id} />
+                          <input type="hidden" name="projectId" value={project.id} />
+                        </ConfirmForm>
+                      </div>
+                    </Td>
+                  </tr>
+                )
+              })}
             </tbody>
           </Table>
         )}
         <div className="border-t border-border p-5">
-          <ActionForm action={addMilestoneAction} submitLabel="新增里程碑" resetOnSuccess>
+          <ActionForm action={addMilestoneAction} submitLabel="新增時程" resetOnSuccess>
             <input type="hidden" name="projectId" value={project.id} />
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="名稱" required>
-                <Input name="name" required placeholder="設計稿確認" />
-              </Field>
-              <Field label="日期" required>
-                <Input type="date" name="dueOn" required />
-              </Field>
-            </div>
+            <ScheduleFields />
           </ActionForm>
         </div>
       </Card>

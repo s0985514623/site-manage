@@ -149,10 +149,10 @@ export async function 有專案(row: ProjectRow) {
   return p
 }
 
-export async function 有里程碑(projectName: string, name: string, dueOn: string) {
+export async function 有里程碑(projectName: string, name: string, dueOn: string, startOn?: string) {
   const [m] = await db
     .insert(projectMilestones)
-    .values({ projectId: await 專案id(projectName), name, dueOn })
+    .values({ projectId: await 專案id(projectName), name, dueOn, startOn: startOn ?? null })
     .returning()
   return m
 }

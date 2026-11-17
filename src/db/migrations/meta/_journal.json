@@ -15,6 +15,13 @@
       "when": 1794805784441,
       "tag": "0001_flaky_doorman",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794882472467,
+      "tag": "0002_cultured_skaar",
+      "breakpoints": true
     }
   ]
 }

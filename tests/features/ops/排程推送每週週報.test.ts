@@ -36,6 +36,16 @@ describe('排程推送每週週報', () => {
     expect(texts[0]).not.toContain('基本方案')
   })
 
+  it('本週進行中的時程列入週報', async () => {
+    await 有專案({ name: '青禾新官網', client: '青禾設計', category: 'new_site', status: 'in_progress', startDate: '2026-11-01', dueDate: '2026-12-31' })
+    await 有里程碑('青禾新官網', '前端開發', '2026-12-10', '2026-11-10')
+    await 有里程碑('青禾新官網', '上線準備', '2026-12-20', '2026-12-15')
+    await 排程執行('weekly-report')
+    const text = fakeNet.lineTexts()[0]
+    expect(text).toContain('時程：前端開發 11/10–12/10')
+    expect(text).not.toContain('上線準備')
+  })
+
   it('沒有待辦時推送本週無待辦', async () => {
     await 排程執行('weekly-report')
     expect(fakeNet.lineTexts()[0]).toContain('本週無待辦')

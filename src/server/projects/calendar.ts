@@ -67,13 +67,15 @@ export async function syncMilestone(milestoneId: string): Promise<void> {
   })
   if (!milestone) return
   const { project } = milestone
+  // 有開始日 = 一段時程（跨日事件）；沒有 = 單日里程碑
+  const kind = milestone.startOn ? '時程' : '里程碑'
   try {
     const eventId = await upsertCalendarEvent(
       'project',
       {
-        summary: `【里程碑】${clientLabel(project.client)} · ${project.name} · ${milestone.name}`,
+        summary: `【${kind}】${clientLabel(project.client)} · ${project.name} · ${milestone.name}`,
         description: `後台：${env.APP_URL}/projects/${project.id}`,
-        ...allDay(milestone.dueOn),
+        ...allDay(milestone.startOn ?? milestone.dueOn, milestone.dueOn),
         extendedProperties: { private: { siteSupportMilestoneId: milestone.id } },
         transparency: 'transparent',
       },
