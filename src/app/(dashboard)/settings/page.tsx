@@ -25,7 +25,14 @@ import { TAX_MODE_LABEL, formatMoney } from '@/lib/money'
 import { calendarStatus } from '@/lib/gcal'
 import { getSettings } from '@/lib/settings'
 import { deletePlan, savePlan } from '@/server/actions/plans'
-import { saveSendingSettings, saveSettings } from '@/server/actions/settings'
+import {
+  deleteStampAction,
+  saveSendingSettings,
+  saveSettings,
+  saveStampEnabledAction,
+  uploadStampAction,
+} from '@/server/actions/settings'
+import { STAMP_KINDS, STAMP_LABEL, stampStatus } from '@/server/stamps'
 
 export const metadata = { title: '設定' }
 export const dynamic = 'force-dynamic'
@@ -124,10 +131,11 @@ export default async function SettingsPage({
   const gcalDetail =
     typeof params.detail === 'string' ? params.detail : undefined
 
-  const [config, planRows, gcal] = await Promise.all([
+  const [config, planRows, gcal, stampFiles] = await Promise.all([
     getSettings(),
     db.query.plans.findMany({ orderBy: [asc(plans.sortOrder), asc(plans.name)] }),
     calendarStatus(),
+    stampStatus(),
   ])
 
   return (
@@ -583,6 +591,70 @@ export default async function SettingsPage({
               </div>
             </div>
           ))}
+        </div>
+      </Card>
+
+      <Card
+        title="報價單用印"
+        description="上傳乙方大章與小章，報價單 PDF 的乙方「用印」欄會自動蓋上；甲方欄位留白給客戶蓋。圖檔存在資料庫，不會進版控"
+      >
+        <div className="space-y-5 p-5">
+          <div className="grid gap-5 sm:grid-cols-2">
+            {STAMP_KINDS.map((kind) => {
+              const file = stampFiles[kind]
+              return (
+                <div key={kind} className="rounded-lg border border-border p-4">
+                  <p className="text-sm font-medium">{STAMP_LABEL[kind]}</p>
+                  <div className="mt-3 flex h-28 items-center justify-center rounded-md bg-surface-muted">
+                    {file ? (
+                      // 預覽走需要登入的路由；加上更新時間避免瀏覽器快取舊圖
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={`/api/stamps/${kind}?v=${file.updatedAt.getTime()}`}
+                        alt={STAMP_LABEL[kind]}
+                        className="max-h-24 max-w-full object-contain"
+                      />
+                    ) : (
+                      <span className="text-xs text-muted">尚未上傳</span>
+                    )}
+                  </div>
+                  <div className="mt-3 space-y-3">
+                    <ActionForm action={uploadStampAction} submitLabel={file ? '換一張' : '上傳'} resetOnSuccess>
+                      <input type="hidden" name="kind" value={kind} />
+                      <Input
+                        name="file"
+                        type="file"
+                        required
+                        accept="image/png,image/jpeg"
+                        className="file:mr-3 file:rounded-md file:border-0 file:bg-surface-muted file:px-3 file:py-1.5 file:text-sm"
+                      />
+                    </ActionForm>
+                    {file && (
+                      <ConfirmForm
+                        action={deleteStampAction}
+                        label="刪除"
+                        confirmLabel="確定刪除"
+                        message="之後產生的報價單 PDF 不會再蓋這個章。"
+                      >
+                        <input type="hidden" name="kind" value={kind} />
+                      </ConfirmForm>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <p className="text-xs text-muted">
+            建議：白紙蓋章後以 300 dpi 掃描、裁切，去背存成透明 PNG（2MB 以內）。
+          </p>
+          <ActionForm action={saveStampEnabledAction} submitLabel="儲存">
+            <Checkbox
+              name="stampEnabled"
+              defaultChecked={config.stampEnabled}
+              label="報價單自動用印"
+              hint="關閉時 PDF 的用印欄留白，可以印出來手動蓋章"
+            />
+          </ActionForm>
         </div>
       </Card>
 

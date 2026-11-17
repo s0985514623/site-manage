@@ -4,6 +4,7 @@ import { asc, desc, eq } from 'drizzle-orm'
 import { db } from '@/db'
 import { contacts, quoteItems, quotes } from '@/db/schema'
 import { quoteSubjectName } from '../quote-display'
+import { stampsForPdf } from '@/server/stamps'
 import { getSettings } from '../settings'
 import { QuoteDocument } from './QuoteDocument'
 
@@ -39,8 +40,11 @@ export async function renderQuotePdf(quoteId: string): Promise<{
     orderBy: [desc(contacts.isPrimary), desc(contacts.receiveQuotes)],
   })
 
+  const stamps = await stampsForPdf()
+
   const buffer = await renderToBuffer(
     <QuoteDocument
+      stamps={stamps}
       quote={{ ...quote, siteName: quoteSubjectName(quote) }}
       settings={settings}
       contact={contact ?? undefined}

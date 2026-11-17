@@ -3,6 +3,7 @@ import path from 'node:path'
 import {
   Document,
   Font,
+  Image,
   Page,
   StyleSheet,
   Text,
@@ -199,7 +200,12 @@ const s = StyleSheet.create({
   },
   kvValue: { flex: 1, paddingVertical: 2.5, paddingHorizontal: 5 },
 
-  stampBox: { height: 32 },
+  /* 用印欄：甲乙方同高（72pt），甲方留白給客戶蓋，乙方放大小章 */
+  stampBox: { height: 72 },
+  /* 乙方用印：大章在左、小章在右，固定尺寸、維持比例 */
+  stampFilled: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  stampCompany: { width: 66, height: 66, objectFit: 'contain' },
+  stampPerson: { width: 34, height: 34, objectFit: 'contain' },
 
   termsHead: {
     backgroundColor: C.head,
@@ -264,9 +270,11 @@ export type QuoteDocumentProps = {
   settings: Settings
   /** 甲方聯絡人（主要窗口） */
   contact?: { name?: string | null; phone?: string | null; email?: string | null }
+  /** 乙方用印（data URI）。沒有就留白給人手動蓋 */
+  stamps?: { company?: string; person?: string }
 }
 
-export function QuoteDocument({ quote, settings, contact }: QuoteDocumentProps) {
+export function QuoteDocument({ quote, settings, contact, stamps }: QuoteDocumentProps) {
   registerFonts()
   const taxPercent = Number(quote.taxRate) * 100
   const cur = quote.currency
@@ -401,7 +409,16 @@ export function QuoteDocument({ quote, settings, contact }: QuoteDocumentProps) 
             <KV label="電話" value={settings.companyPhone} />
             <View style={s.kvRow}>
               <Text style={s.kvLabel}>用印</Text>
-              <View style={[s.kvValue, s.stampBox]} />
+              {stamps?.company || stamps?.person ? (
+                <View style={[s.kvValue, s.stampBox, s.stampFilled]}>
+                  {/* eslint-disable-next-line jsx-a11y/alt-text -- react-pdf 的 Image 沒有 alt */}
+                  {stamps.company && <Image src={stamps.company} style={s.stampCompany} />}
+                  {/* eslint-disable-next-line jsx-a11y/alt-text -- react-pdf 的 Image 沒有 alt */}
+                  {stamps.person && <Image src={stamps.person} style={s.stampPerson} />}
+                </View>
+              ) : (
+                <View style={[s.kvValue, s.stampBox]} />
+              )}
             </View>
           </View>
         </View>

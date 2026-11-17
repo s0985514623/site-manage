@@ -599,6 +599,8 @@ export const settings = pgTable('settings', {
   quoteWindowDays: integer('quote_window_days').notNull().default(60),
   /** 報價單有效天數 */
   quoteValidDays: integer('quote_valid_days').notNull().default(14),
+  /** 報價單 PDF 是否自動蓋上乙方大小章（圖檔在 stamps 表） */
+  stampEnabled: boolean('stamp_enabled').notNull().default(true),
 
   defaultTaxMode: taxModeEnum('default_tax_mode').notNull().default('exclusive'),
   defaultTaxRate: numeric('default_tax_rate', { precision: 5, scale: 4 })
@@ -625,6 +627,25 @@ export const settings = pgTable('settings', {
     .notNull()
     .default(200),
 
+  updatedAt: updatedAt(),
+})
+
+/* ------------------------------------------------------------------ */
+/* 乙方用印（大章 = 公司章、小章 = 負責人章）                              */
+/* ------------------------------------------------------------------ */
+
+export const stampKindEnum = pgEnum('stamp_kind', ['company', 'person'])
+
+/**
+ * 用印圖檔存在資料庫，跟回簽報價單一樣隨資料庫備份、不進版控。
+ * 獨立成表而不放在 settings：getSettings() 到處都在呼叫，不該每次都把圖檔讀出來。
+ */
+export const stamps = pgTable('stamps', {
+  kind: stampKindEnum('kind').primaryKey(),
+  contentType: text('content_type').notNull(),
+  sizeBytes: integer('size_bytes').notNull(),
+  data: bytea('data').notNull(),
+  uploadedBy: text('uploaded_by').notNull(),
   updatedAt: updatedAt(),
 })
 
@@ -967,3 +988,4 @@ export type Project = typeof projects.$inferSelect
 export type NewProject = typeof projects.$inferInsert
 export type ProjectMilestone = typeof projectMilestones.$inferSelect
 export type LineConversation = typeof lineConversations.$inferSelect
+export type Stamp = typeof stamps.$inferSelect

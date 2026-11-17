@@ -5,6 +5,7 @@ import { z } from 'zod'
 
 import { requireUser } from '@/auth'
 import { setQuoteFollowupDays, setQuoteSendingMode } from '@/server/quotes/sending-mode'
+import { deleteStamp, saveStamp, setStampEnabled } from '@/server/stamps'
 import { logActivity } from '@/lib/activity'
 import { updateSettings } from '@/lib/settings'
 import { formError, type ActionState } from './helpers'
@@ -136,4 +137,38 @@ export async function saveSendingSettings(
   if (!days.ok) return days
   revalidatePath('/settings')
   return { ok: true }
+}
+
+/* ---------------------------- 用印 ---------------------------- */
+
+export async function uploadStampAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const email = await requireUser()
+  const file = formData.get('file')
+  if (!(file instanceof File)) return { error: '請選擇圖檔', violationType: 'INVALID_ARGUMENT' }
+  const result = await saveStamp(read(formData, 'kind'), file, email)
+  if (result.ok) revalidatePath('/settings')
+  return result
+}
+
+export async function deleteStampAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const email = await requireUser()
+  const result = await deleteStamp(read(formData, 'kind'), email)
+  if (result.ok) revalidatePath('/settings')
+  return result
+}
+
+export async function saveStampEnabledAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const email = await requireUser()
+  const result = await setStampEnabled(formData.get('stampEnabled') === 'on', email)
+  if (result.ok) revalidatePath('/settings')
+  return result
 }
