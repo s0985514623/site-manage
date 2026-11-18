@@ -7,7 +7,7 @@ import { z } from 'zod'
 
 import { requireUser } from '@/auth'
 import { db } from '@/db'
-import { clients, contacts, quotes } from '@/db/schema'
+import { clients, contacts, projects, quotes } from '@/db/schema'
 import { logActivity } from '@/lib/activity'
 import { formError, type ActionState } from './helpers'
 
@@ -147,6 +147,20 @@ export async function deleteClient(
     return {
       error:
         '這個客戶已有報價單紀錄，無法刪除。若已結束合作，請改將狀態設為「停用」，保留歷史資料。',
+    }
+  }
+
+  // 專案同樣是 onDelete: restrict，需先處理。
+  const existingProjects = await db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(eq(projects.clientId, id))
+    .limit(1)
+
+  if (existingProjects.length > 0) {
+    return {
+      error:
+        '這個客戶底下還有專案，無法刪除。請先刪除相關專案；若已結束合作，請改將狀態設為「停用」。',
     }
   }
 
