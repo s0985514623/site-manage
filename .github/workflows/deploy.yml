@@ -27,7 +27,7 @@ permissions:
   contents: read
 
 env:
-  IMAGE: ghcr.io/s0985514623/site-support
+  IMAGE: ghcr.io/s0985514623/site-manage
 
 jobs:
   ci:

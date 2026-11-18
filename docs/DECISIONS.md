@@ -96,7 +96,7 @@
 ## 4. 部署決策（暫緩執行）
 
 - 依 `D:\Dev\line-accounting\deploy\SHARED-VPS-SPEC.md` 共用 VPS 規格：VPS 已有 Docker＋Caddy＋共用 Postgres。
-- App 代號 `site-manager`，全新部署（還沒上線過），image `ghcr.io/s0985514623/site-support`。
+- App 代號 `site-manager`，全新部署（還沒上線過），image `ghcr.io/s0985514623/site-manage`。
 - 排程用 **systemd timer**（8 支 cron＋備份），在容器內執行 `scripts/run-cron.mjs`。
 - Caddy 擋掉外部存取 `/api/cron/*`；健康檢查 `/healthz`。
 - 部署步驟見 `deploy/README.md`（A～I）。

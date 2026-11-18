@@ -14,7 +14,7 @@ set -Eeuo pipefail
 
 # ---- 每個 app 修改這裡 -------------------------------------------------------------
 APP=site-manager                            # compose project 名稱 = 目錄名
-IMAGE=ghcr.io/s0985514623/site-support
+IMAGE=ghcr.io/s0985514623/site-manage
 SERVICE=app
 KEEP_IMAGES=5
 # ------------------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 openapi: 3.0.0
 info:
-  title: 網站續約管理系統（site-support）— 本次新增 / 變更的契約
+  title: 網站續約管理系統（site-manage）— 本次新增 / 變更的契約
   version: 1.0.0
   description: |
     只描述本次規格範圍（專案管理、報價寄送模式、追蹤、收款、LINE 操作、監控）。

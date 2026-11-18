@@ -18,7 +18,7 @@
 
 | 項目 | accounting | site-manager |
 | --- | --- | --- |
-| 映像 | `ghcr.io/s0985514623/line-accounting` | `ghcr.io/s0985514623/site-support`（repo 名稱 `site-support`） |
+| 映像 | `ghcr.io/s0985514623/line-accounting` | `ghcr.io/s0985514623/site-manage`（repo 名稱 `site-manage`） |
 | 資料庫 | database/role `accounting` | database/role **`site_manager`**（底線：PostgreSQL 識別字不能有 `-`） |
 | pre-deploy | `prisma migrate deploy` + seed | `node scripts/migrate.mjs`（drizzle migrator） |
 | 健康檢查 | `/healthz` | `/healthz`（`src/app/healthz/route.ts`，SELECT 1，逾時 3 秒回 503） |
@@ -54,8 +54,8 @@
 
 ## B. GitHub repo（約 10 分鐘）
 
-3. GitHub 建 **private** repo `s0985514623/site-support`（名稱要一致：映像是 `ghcr.io/s0985514623/site-support`）
-4. `PS> cd D:\Dev\site-support; git remote add origin git@github.com:s0985514623/site-support.git`
+3. GitHub 建 **private** repo `s0985514623/site-manage`（名稱要一致：映像是 `ghcr.io/s0985514623/site-manage`）
+4. `PS> cd D:\Dev\site-support; git remote add origin https://github.com/s0985514623/site-manage.git`
    → **先不要 push main**（等 E 節設好；否則第一次 push 會跑 deploy 並失敗）
 
 ## C. VPS：資料庫（約 5 分鐘）
@@ -106,17 +106,19 @@
     # 密碼含特殊字元時要 URL encode；步驟 5 用 hex 產生，不需要
     DATABASE_URL=postgresql://site_manager:<步驟 5 的密碼>@postgres:5432/site_manager
 
-    # 以下三把：在 VPS 上各跑一次 openssl 產生，不要沿用本機 .env.local 的值
+    # AUTH_SECRET、CRON_SECRET：在 VPS 上各跑一次 openssl 產生，不要沿用本機的值
     AUTH_SECRET=<openssl rand -base64 32>
-    ENCRYPTION_KEY=<openssl rand -base64 32>
     CRON_SECRET=<openssl rand -hex 32>
+    # ENCRYPTION_KEY：要匯入本機資料時「必須沿用本機 .env.local 的值」，否則帳密解不開；
+    # 全新空資料庫才用 openssl rand -base64 32 產生
+    ENCRYPTION_KEY=<本機 .env.local 的 ENCRYPTION_KEY>
 
     ALLOWED_EMAILS=<你的 Google 帳號 Email>
     AUTH_GOOGLE_ID=...
     AUTH_GOOGLE_SECRET=...
 
     RESEND_API_KEY=...
-    MAIL_FROM=報價通知 <notice@你的網域>
+    MAIL_FROM=冠澄數位行銷 <service@ren-codes.com>
     NOTIFY_TO=<你的 Email>
 
     LINE_CHANNEL_ACCESS_TOKEN=...
@@ -167,7 +169,7 @@
 ## G. 首次部署（約 10 分鐘）
 
 23. `PS> git push -u origin main` → Actions「Deploy」：CI → build → deploy → public smoke 全綠
-24. GHCR：第一次 push 後 Package settings → Manage Actions access，確認 `site-support` repo 有 **Read**
+24. GHCR：第一次 push 後 Package settings → Manage Actions access，確認 `site-manage` repo 有 **Read**
 25. 驗證：
     ```bash
     $ cd /opt/my-services/apps/site-manager && cat .last_good_tag && tail -n 20 deploy.log
@@ -224,7 +226,7 @@
 - **緊急（VPS 上）**：
   ```bash
   $ cd /opt/my-services/apps/site-manager
-  $ sudo -u deploy env APP_IMAGE="ghcr.io/s0985514623/site-support:$(cat .last_good_tag)" \
+  $ sudo -u deploy env APP_IMAGE="ghcr.io/s0985514623/site-manage:$(cat .last_good_tag)" \
       docker compose -p site-manager -f docker-compose.yml up -d --no-deps app
   ```
 - 回滾**不回滾 migration**：migration 必須向後相容（先 expand、下一版再 contract）。
@@ -235,7 +237,7 @@
 | --- | --- |
 | `forbidden` / `bad tag` / `bad actor` | SSH 指令格式錯，或 actor 為 `xxx[bot]` |
 | exit 75 `deploy in progress` | 另一個部署持有 `.deploy.lock` |
-| pull `denied` / `unauthorized` | GHCR package 未給 `site-support` repo Read 權限（G 節步驟 24） |
+| pull `denied` / `unauthorized` | GHCR package 未給 `site-manage` repo Read 權限（G 節步驟 24） |
 | migration 失敗 | 服務未被更動；檢查 `.env` 的 `DATABASE_URL` 與 `db_site-manager` 網路 |
 | 502（Caddy） | Caddy 未加入 `proxy_site-manager`，或 compose 的 alias 不是 `site-manager-app` |
 | 容器起來就退出、log 有「環境變數設定有誤」 | `.env` 缺必填值（`src/lib/env.ts`），`ENCRYPTION_KEY` 必須是 32 bytes base64 |

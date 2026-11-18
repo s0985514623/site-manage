@@ -14,7 +14,7 @@ export type UptimeResult = {
 }
 
 const TIMEOUT_MS = 10_000
-const UA = 'site-support-monitor/1.0 (+renewal tracking)'
+const UA = 'site-manage-monitor/1.0 (+renewal tracking)'
 
 export async function checkUptime(
   url: string,
