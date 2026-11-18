@@ -49,3 +49,6 @@ next-env.d.ts
 
 # Excel 開啟檔案時產生的鎖定檔
 ~$*
+
+# Serena MCP 工作資料
+.serena/
