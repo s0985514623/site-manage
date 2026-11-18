@@ -75,12 +75,12 @@
    REVOKE ALL ON DATABASE site_manager FROM PUBLIC;
    ```
    → 預期：`\l` 看得到 `site_manager`，owner 為 `site_manager`
-7. 建網路並讓 Postgres 加入（`db_site-manager` 為 internal，寫法照 `db_accounting`）：
+7. 建網路並讓 Postgres 加入（`db_site_manager` 為 internal，寫法照 `db_accounting`）：
    ```bash
-   $ docker network create --internal db_site-manager
+   $ docker network create --internal db_site_manager
    ```
-   infra compose 的 postgres service 加入 `db_site-manager` 網路 → `cd /opt/my-services/infra && docker compose up -d postgres`
-   → 預期：`docker network inspect db_site-manager --format '{{range .Containers}}{{.Name}} {{end}}'` 含 `infra-postgres-1`
+   infra compose 的 postgres service 加入 `db_site_manager` 網路 → `cd /opt/my-services/infra && docker compose up -d postgres`
+   → 預期：`docker network inspect db_site_manager --format '{{range .Containers}}{{.Name}} {{end}}'` 含 `infra-postgres-1`
 
 ## D. VPS：目錄、compose、.env（約 15 分鐘）
 
@@ -159,8 +159,8 @@
 
 ## F. VPS：Caddy（約 10 分鐘）
 
-18. `$ docker network create proxy_site-manager`（若 infra 是用 compose 宣告網路，改照 `proxy_accounting` 的寫法）
-19. infra compose 的 Caddy service 加入 `proxy_site-manager` 網路
+18. `$ docker network create proxy_site_manager`（若 infra 是用 compose 宣告網路，改照 `proxy_accounting` 的寫法）
+19. infra compose 的 Caddy service 加入 `proxy_site_manager` 網路
 20. `infra/.env` 加：`SITE_MANAGER_DOMAIN=site-manager.ren-codes.com`
 21. 把 `deploy/Caddyfile.site-manager` 區塊貼進 infra 的 Caddyfile（放在 accounting、calendar 區塊後面）
 22. `$ cd /opt/my-services/infra && docker compose up -d caddy && docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile`
@@ -238,7 +238,7 @@
 | `forbidden` / `bad tag` / `bad actor` | SSH 指令格式錯，或 actor 為 `xxx[bot]` |
 | exit 75 `deploy in progress` | 另一個部署持有 `.deploy.lock` |
 | pull `denied` / `unauthorized` | GHCR package 未給 `site-manage` repo Read 權限（G 節步驟 24） |
-| migration 失敗 | 服務未被更動；檢查 `.env` 的 `DATABASE_URL` 與 `db_site-manager` 網路 |
-| 502（Caddy） | Caddy 未加入 `proxy_site-manager`，或 compose 的 alias 不是 `site-manager-app` |
+| migration 失敗 | 服務未被更動；檢查 `.env` 的 `DATABASE_URL` 與 `db_site_manager` 網路 |
+| 502（Caddy） | Caddy 未加入 `proxy_site_manager`，或 compose 的 alias 不是 `site-manager-app` |
 | 容器起來就退出、log 有「環境變數設定有誤」 | `.env` 缺必填值（`src/lib/env.ts`），`ENCRYPTION_KEY` 必須是 32 bytes base64 |
 | 排程沒跑 | `systemctl list-timers 'site-manager-*'`、`journalctl -u 'site-manager-cron@*' --since today` |

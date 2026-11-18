@@ -1,10 +1,10 @@
 # 範本：複製到 VPS 的 /opt/my-services/apps/site-manager/docker-compose.yml
 # （使用者管理，deploy.sh 不覆寫）。規格：SHARED-VPS-SPEC §2.2。
 #
-# 與 accounting 相同：共用 PostgreSQL（database/role site_manager、網路 db_site-manager）。
+# 與 accounting 相同：共用 PostgreSQL（database/role site_manager、網路 db_site_manager）。
 # 網路的 external 宣告方式請與 accounting 的實際檔案一致。
 #
-# 沒有 ports：對外由共用 Caddy 經 proxy_site-manager 網路轉發到 site-manager-app:3000。
+# 沒有 ports：對外由共用 Caddy 經 proxy_site_manager 網路轉發到 site-manager-app:3000。
 services:
   app:
     image: ${APP_IMAGE:-traefik/whoami:v1.10}
@@ -13,9 +13,9 @@ services:
     # 產報價 PDF（@react-pdf + 內嵌中文字型）時有記憶體峰值，與 accounting 相同給 768m
     mem_limit: 768m
     networks:
-      proxy_site-manager:
+      proxy_site_manager:
         aliases: [site-manager-app]
-      db_site-manager: {}
+      db_site_manager: {}
     logging:
       driver: json-file
       options:
@@ -23,7 +23,7 @@ services:
         max-file: '5'
 
 networks:
-  proxy_site-manager:
+  proxy_site_manager:
     external: true
-  db_site-manager:
+  db_site_manager:
     external: true
