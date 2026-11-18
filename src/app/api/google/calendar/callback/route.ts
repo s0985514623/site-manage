@@ -39,18 +39,24 @@ export async function GET(request: Request) {
     back('error', '授權狀態驗證失敗，請重新操作一次')
   }
 
+  /**
+   * back() 靠丟出 NEXT_REDIRECT 來跳轉，所以成功的跳轉必須放在 try 外面；
+   * 放在裡面會被 catch 接住，成功也顯示成「授權失敗 NEXT_REDIRECT」。
+   */
+  let failure: string | null = null
   try {
     await exchangeCode(code)
     const calendarId = await ensureCalendar()
     await logActivity(email, 'gcal.authorized', 'settings', null, {
       calendarId,
     })
-    back('ok')
   } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause)
+    failure = cause instanceof Error ? cause.message : String(cause)
     await logActivity(email, 'gcal.authorize_failed', 'settings', null, {
-      error: message,
+      error: failure,
     })
-    back('error', message)
   }
+
+  if (failure !== null) back('error', failure)
+  back('ok')
 }
