@@ -8,7 +8,7 @@
 
 ## 0. 目前狀態（先看這裡）
 
-- 分支：`feat/site-ops-expansion`（**尚未 push、尚未合併到 `master`**）
+- 分支：`main`（2026-11-18 已上線；GitHub `s0985514623/site-manage`，push main 自動部署）
 - 第 0～6 階段＋兩個追加功能已完成並 commit：
   | Commit | 內容 |
   |---|---|
@@ -22,7 +22,12 @@
   | `ff36bdd` | 追加：專案多段自訂時程（跨日事件同步日曆） |
   | `d7ae681` | 追加：報價單自動用印（乙方大小章） |
 - 驗證狀態：219 個測試通過、規格範例覆蓋 139/139、`npm run verify`、build、lint 皆通過。
-- **部署暫緩**：使用者說「先不用部署上線」。等使用者明確說要上線才做 push / 部署。
+- **已上線（2026-11-18）**：https://site-manager.ren-codes.com ，版本 `0cbe4d4`。
+  - 本機資料（20 客戶、23 網站、31 服務、22 聯絡人、19 帳密、大小章、設定、報價單 261118）已用 data-only pg_restore 匯入正式庫。
+  - 正式環境的 `ENCRYPTION_KEY` 沿用本機的（才能解開匯入的帳密）；`AUTH_SECRET`、`CRON_SECRET` 為 VPS 新產生。
+  - LINE 改用**新的官方帳號**（webhook 指向正式站，rich menu 已建立）。
+  - 9 支 systemd timer 已啟用；`/api/cron/*` 由 Caddy 對外回 404。
+  - **之後資料以正式環境為準**，本機只做開發測試，不會同步上去。
 
 ---
 
@@ -93,13 +98,18 @@
 
 ---
 
-## 4. 部署決策（暫緩執行）
+## 4. 部署決策（已上線）
 
 - 依 `D:\Dev\line-accounting\deploy\SHARED-VPS-SPEC.md` 共用 VPS 規格：VPS 已有 Docker＋Caddy＋共用 Postgres。
-- App 代號 `site-manager`，全新部署（還沒上線過），image `ghcr.io/s0985514623/site-manage`。
+- App 代號 `site-manager`，image `ghcr.io/s0985514623/site-manage`。
 - 排程用 **systemd timer**（8 支 cron＋備份），在容器內執行 `scripts/run-cron.mjs`。
 - Caddy 擋掉外部存取 `/api/cron/*`；健康檢查 `/healthz`。
 - 部署步驟見 `deploy/README.md`（A～I）。
+- VPS 管理用 `root@139.162.95.207`（金鑰 `~/.ssh/id_ed25519` 有 passphrase；Windows ssh-agent 被停用，改用 Git Bash 的 ssh-agent + 彈窗輸入）。
+- VPS 上的網路名稱是底線：`proxy_site_manager`、`db_site_manager`。
+- **手動重啟容器必須帶 `APP_IMAGE`**（`.env` 沒有存映像版本，直接 `docker compose up` 會退回 whoami 佔位映像）：
+  `sudo -u deploy env APP_IMAGE="ghcr.io/s0985514623/site-manage:$(cat .last_good_tag)" docker compose -p site-manager -f docker-compose.yml up -d --no-deps app`
+- CI 的 `typecheck` 會先跑 `next typegen`（乾淨環境沒有 `.next/types`）。
 
 ---
 
@@ -141,6 +151,8 @@
 
 ## 9. 待辦（使用者端）
 
-1. 重新登入 localhost 後台。
-2. 把大小章去背存成 PNG，到「設定 → 報價單用印」上傳，開任一報價單「檢視 PDF」確認。
-3. 決定何時上線 → 再進行 push、合併與部署。
+1. Google Cloud Console 的 OAuth 用戶端加兩個重新導向 URI（正式站登入、Google Calendar）。
+2. 正式站登入後台 → 設定 → 重新連結 Google Calendar。
+3. LINE 新帳號 Console 按 Webhook「Verify」；後台「設定」視需要改報價單上印的公司 LINE ID。
+4. 需要監控的網站在網站頁打開「監控」開關（預設關閉）。
+5. 異地備份：VPS 的 `backups/` 只存在同一台機器上。
