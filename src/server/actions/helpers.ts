@@ -27,6 +27,8 @@ export const VIOLATION_TYPES = [
   'ALREADY_PAID',
   'PROJECT_HAS_QUOTES',
   'HANDOVER_NOT_ALLOWED',
+  'NO_RENEWABLE_SERVICE',
+  'MIXED_CURRENCY',
 ] as const
 export type ViolationType = (typeof VIOLATION_TYPES)[number]
 

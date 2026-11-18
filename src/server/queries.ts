@@ -86,6 +86,7 @@ export async function listActiveServices() {
       priceAmount: services.priceAmount,
       currency: services.currency,
       renewalState: services.renewalState,
+      currentQuoteId: services.currentQuoteId,
       detectedExpiresAt: services.detectedExpiresAt,
       siteId: sites.id,
       siteName: sites.name,

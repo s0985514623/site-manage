@@ -53,6 +53,27 @@ export async function renderQuotePdf(quoteId: string): Promise<{
 
   return {
     buffer: Buffer.from(buffer),
-    filename: `報價單_${quote.quoteNo}_${quote.client.name}.pdf`,
+    filename: quotePdfFilename(quote),
   }
+}
+
+/**
+ * PDF 檔名。
+ * - 專案報價：「<專案名稱>報價單v<單號>.pdf」
+ * - 續約報價（綁網站、非專案）：「<網站名稱>續約報價單v<單號>.pdf」
+ * 檔名中不能出現的字元（/ \ : * ? " < > |）換成底線。
+ */
+export function quotePdfFilename(quote: {
+  quoteNo: string
+  projectId: string | null
+  project?: { name: string } | null
+  client: { name: string }
+  site: { name: string } | null
+}): string {
+  const name = quote.projectId
+    ? `${quote.project?.name ?? quote.client.name}報價單v${quote.quoteNo}`
+    : quote.site
+      ? `${quote.site.name}續約報價單v${quote.quoteNo}`
+      : `報價單v${quote.quoteNo}_${quote.client.name}`
+  return `${name.replace(/[\\/:*?"<>|]/g, '_')}.pdf`
 }

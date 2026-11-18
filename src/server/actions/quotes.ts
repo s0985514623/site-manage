@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
 import { eq, sql } from 'drizzle-orm'
 
 import { requireUser } from '@/auth'
@@ -10,6 +11,7 @@ import { logActivity } from '@/lib/activity'
 import { advanceByCycle, type BillingCycle } from '@/lib/dates'
 import { checkUploadFile, type CheckedFile } from '@/lib/upload-file'
 import { registerPayment } from '@/server/quotes/payment'
+import { createRenewalQuote } from '@/server/quotes/renewal'
 import { cancelQuote, sendQuoteToClient } from '@/server/send-quote'
 import { type ActionState } from './helpers'
 
@@ -39,6 +41,26 @@ export async function sendQuote(
   revalidatePath('/quotes')
   revalidatePath(`/quotes/${id}`)
   return { ok: true }
+}
+
+/**
+ * 手動開立續約報價單（網站頁、到期總表的按鈕）。
+ * 成功後直接跳到報價單頁，讓管理者檢查內容後寄出。
+ */
+export async function createRenewalQuoteAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const email = await requireUser()
+  const siteId = read(formData, 'siteId')
+
+  const result = await createRenewalQuote(siteId, email)
+  if (!result.ok) return { error: result.error, violationType: result.violationType }
+
+  revalidatePath('/quotes')
+  revalidatePath('/services')
+  revalidatePath(`/sites/${siteId}`)
+  redirect(`/quotes/${result.quoteId}`)
 }
 
 export async function cancelQuoteAction(

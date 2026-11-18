@@ -53,6 +53,7 @@ export type SkipReason =
   | 'no_price' // 代管項目沒設售價，開出去會是零元報價
   | 'zero_total' // 全部項目都是 0 元，沒有東西可收費
   | 'mixed_currency' // 同一張單混了不同幣別，金額無法直接相加
+  | 'no_candidate' // 沒有尚未被涵蓋的代管項目（只有手動開立會用到）
 
 export type QuoteGroup = {
   siteId: string
@@ -129,84 +130,21 @@ export async function collectQuoteGroups(
   const skipped: GroupScan['skipped'] = []
 
   for (const [siteId, list] of bySite) {
-    const siteName = list[0].siteName
-    // rows 已依 expiresAt 排序，所以第一筆就是錨點
-    const anchor = list[0].service
-    const anchorDate = anchor.expiresAt
-    const anchorDays = daysUntil(anchorDate, scannedAt)
-
-    if (anchorDays > settings.quoteTriggerDays) {
-      skipped.push({ siteId, siteName, reason: 'not_due' })
-      continue
-    }
-
-    const windowEnd = plusDays(anchorDate, settings.quoteWindowDays)
-    const inWindow = list
-      .map((r) => r.service)
-      .filter((s) => s.expiresAt <= windowEnd)
-
-    const withPrice = inWindow.filter((s) => s.priceAmount !== null)
-    const excludedNoPrice = inWindow.filter((s) => s.priceAmount === null)
-
-    if (withPrice.length === 0) {
-      skipped.push({
+    const client = clientNames.get(siteId)
+    const result = groupForSite(
+      {
         siteId,
-        siteName,
-        reason: 'no_price',
-        detail: inWindow.map((s) => s.identifier).join('、'),
-      })
-      continue
-    }
-
-    /**
-     * 混幣別直接跳過而不是硬加。把 USD 的主機費和 TWD 的網域費相加
-     * 會得到一個毫無意義的數字，而那個數字會被寄到客戶信箱。
-     */
-    const currencies = new Set(withPrice.map((s) => s.currency))
-    if (currencies.size > 1) {
-      skipped.push({
-        siteId,
-        siteName,
-        reason: 'mixed_currency',
-        detail: [...currencies].join(' / '),
-      })
-      continue
-    }
-
-    /**
-     * 全部項目都是 0 元時不開單。
-     *
-     * 單一項目 0 元是合理的（例如 Let's Encrypt 憑證隨服務附贈，
-     * 列在報價單上讓客戶看見價值），但整張單總額為 0 就沒有意義，
-     * 寄出去只會讓客戶困惑「這是要我付什麼」。
-     */
-    const totalCents = withPrice.reduce(
-      (sum, s) => sum + toCents(s.priceAmount),
-      0,
+        siteName: list[0].siteName,
+        clientId: list[0].clientId,
+        clientName: client?.name ?? '',
+        clientShortName: client?.shortName ?? null,
+        services: list.map((r) => r.service),
+      },
+      settings,
+      scannedAt,
     )
-    if (totalCents === 0) {
-      skipped.push({
-        siteId,
-        siteName,
-        reason: 'zero_total',
-        detail: withPrice.map((s) => s.identifier).join('、'),
-      })
-      continue
-    }
-
-    groups.push({
-      siteId,
-      siteName,
-      clientId: list[0].clientId,
-      clientName: clientNames.get(siteId)?.name ?? '',
-      clientShortName: clientNames.get(siteId)?.shortName ?? null,
-      anchor,
-      anchorDate,
-      anchorDays,
-      items: withPrice,
-      excludedNoPrice,
-      currency: withPrice[0].currency,
-    })
+    if ('reason' in result) skipped.push(result)
+    else groups.push(result)
   }
 
   return {
@@ -216,6 +154,149 @@ export async function collectQuoteGroups(
     groups,
     skipped,
   }
+}
+
+type SiteCandidates = {
+  siteId: string
+  siteName: string
+  clientId: string
+  clientName: string
+  clientShortName: string | null
+  /** 該網站尚未被報價單涵蓋的代管項目，需依 expiresAt 由早到晚排序 */
+  services: Service[]
+}
+
+type Skip = GroupScan['skipped'][number]
+
+/**
+ * 單一網站的分組規則（排程與手動開立共用）。
+ *
+ * ignoreTrigger：手動開立時不檢查觸發天數 —— 管理者按下按鈕就代表
+ * 現在就要開，只沿用視窗合併、售價與幣別檢查。
+ */
+export function groupForSite(
+  site: SiteCandidates,
+  settings: Settings,
+  scannedAt: DateStr,
+  opts: { ignoreTrigger?: boolean } = {},
+): QuoteGroup | Skip {
+  const { siteId, siteName } = site
+  // services 已依 expiresAt 排序，所以第一筆就是錨點
+  const anchor = site.services[0]
+  const anchorDate = anchor.expiresAt
+  const anchorDays = daysUntil(anchorDate, scannedAt)
+
+  if (!opts.ignoreTrigger && anchorDays > settings.quoteTriggerDays) {
+    return { siteId, siteName, reason: 'not_due' }
+  }
+
+  const windowEnd = plusDays(anchorDate, settings.quoteWindowDays)
+  const inWindow = site.services.filter((s) => s.expiresAt <= windowEnd)
+
+  const withPrice = inWindow.filter((s) => s.priceAmount !== null)
+  const excludedNoPrice = inWindow.filter((s) => s.priceAmount === null)
+
+  if (withPrice.length === 0) {
+    return {
+      siteId,
+      siteName,
+      reason: 'no_price',
+      detail: inWindow.map((s) => s.identifier).join('、'),
+    }
+  }
+
+  /**
+   * 混幣別直接跳過而不是硬加。把 USD 的主機費和 TWD 的網域費相加
+   * 會得到一個毫無意義的數字，而那個數字會被寄到客戶信箱。
+   */
+  const currencies = new Set(withPrice.map((s) => s.currency))
+  if (currencies.size > 1) {
+    return {
+      siteId,
+      siteName,
+      reason: 'mixed_currency',
+      detail: [...currencies].join(' / '),
+    }
+  }
+
+  /**
+   * 全部項目都是 0 元時不開單。
+   *
+   * 單一項目 0 元是合理的（例如 Let's Encrypt 憑證隨服務附贈，
+   * 列在報價單上讓客戶看見價值），但整張單總額為 0 就沒有意義，
+   * 寄出去只會讓客戶困惑「這是要我付什麼」。
+   */
+  const totalCents = withPrice.reduce((sum, s) => sum + toCents(s.priceAmount), 0)
+  if (totalCents === 0) {
+    return {
+      siteId,
+      siteName,
+      reason: 'zero_total',
+      detail: withPrice.map((s) => s.identifier).join('、'),
+    }
+  }
+
+  return {
+    siteId,
+    siteName,
+    clientId: site.clientId,
+    clientName: site.clientName,
+    clientShortName: site.clientShortName,
+    anchor,
+    anchorDate,
+    anchorDays,
+    items: withPrice,
+    excludedNoPrice,
+    currency: withPrice[0].currency,
+  }
+}
+
+/**
+ * 手動開立用：只取單一網站的候選項目並分組（不檢查觸發天數）。
+ * 回傳 null 代表網站不存在。
+ */
+export async function collectQuoteGroupForSite(
+  siteId: string,
+  config?: Settings,
+): Promise<QuoteGroup | Skip | null> {
+  const settings = config ?? (await getSettings())
+  const site = await db.query.sites.findFirst({
+    where: eq(sites.id, siteId),
+    with: { client: true },
+  })
+  if (!site) return null
+
+  const list = await db
+    .select()
+    .from(services)
+    .where(
+      and(
+        eq(services.siteId, siteId),
+        eq(services.isOurs, true),
+        eq(services.status, 'active'),
+        eq(services.renewalState, 'upcoming'),
+        isNull(services.currentQuoteId),
+      ),
+    )
+    .orderBy(asc(services.expiresAt))
+
+  if (list.length === 0) {
+    return { siteId, siteName: site.name, reason: 'no_candidate' }
+  }
+
+  return groupForSite(
+    {
+      siteId,
+      siteName: site.name,
+      clientId: site.clientId,
+      clientName: site.client.name,
+      clientShortName: site.client.shortName,
+      services: list,
+    },
+    settings,
+    today(),
+    { ignoreTrigger: true },
+  )
 }
 
 /* ------------------------------------------------------------------ */
@@ -314,6 +395,14 @@ export function computeValidUntil(
 /* 寫入                                                                 */
 /* ------------------------------------------------------------------ */
 
+/** 項目在開單途中已被別張報價單涵蓋 */
+export class QuoteConflictError extends Error {
+  constructor(identifier: string) {
+    super(`${identifier} 已被其他報價單涵蓋`)
+    this.name = 'QuoteConflictError'
+  }
+}
+
 export type CreatedQuote = {
   id: string
   quoteNo: string
@@ -362,8 +451,8 @@ export async function createQuoteForGroup(
       .insert(quotes)
       .values({
         quoteNo,
-        // 專案名稱優先用客戶簡稱：全名放進來會太長
-        projectName: `${group.clientShortName || group.clientName}${group.siteName}續約`,
+        // 只用網站名稱：網站名稱通常已含客戶名，再接客戶名會重複
+        projectName: `${group.siteName}續約`,
         deliveryMethod: [...new Set(group.items.map((s) => SERVICE_TYPE_LABEL[s.type]))]
           .join('、')
           .concat('續約'),
@@ -406,14 +495,20 @@ export async function createQuoteForGroup(
     )
 
     for (const service of group.items) {
-      await tx
+      /**
+       * 只認領「還沒被涵蓋」的項目。手動連點兩次、或手動與排程同時跑時，
+       * 後到的那一筆會撲空，整個交易回滾，不會開出重複的報價單。
+       */
+      const claimed = await tx
         .update(services)
         .set({
           currentQuoteId: quote.id,
           renewalState: 'drafted',
           updatedAt: new Date(),
         })
-        .where(eq(services.id, service.id))
+        .where(and(eq(services.id, service.id), isNull(services.currentQuoteId)))
+        .returning({ id: services.id })
+      if (claimed.length === 0) throw new QuoteConflictError(service.identifier)
     }
 
     return {

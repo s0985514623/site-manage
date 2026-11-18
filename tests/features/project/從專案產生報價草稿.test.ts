@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { db } from '@/db'
 import { plans, quotes } from '@/db/schema'
-import { renderQuotePdf } from '@/lib/pdf/render'
+import { quotePdfFilename, renderQuotePdf } from '@/lib/pdf/render'
 import { createProjectQuote, type ProjectQuoteItemInput } from '@/server/projects/quote'
 
 import { fakeNet } from '../../fakes/network'
@@ -118,7 +118,11 @@ describe('從專案產生報價草稿', () => {
 
   it('報價單的專案名稱為專案名稱', async () => {
     await 管理者從專案產生報價草稿('青禾新官網', [{ description: '官網設計製作', quantity: '1', unit: '式', unitPrice: '50000' }])
-    expect((await 最新一張報價單(await 專案id('青禾新官網')))?.projectName).toBe('青禾新官網')
+    const q = await 最新一張報價單(await 專案id('青禾新官網'))
+    expect(q?.projectName).toBe('青禾新官網')
+    expect(
+      quotePdfFilename({ ...q!, project: { name: '青禾新官網' }, client: { name: '青禾設計' }, site: null }),
+    ).toBe(`青禾新官網報價單v${q!.quoteNo}.pdf`)
   })
 
   it('產生的報價單為草稿且有效期限依設定', async () => {

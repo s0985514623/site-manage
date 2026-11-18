@@ -40,6 +40,7 @@ import {
   saveCredential,
 } from '@/server/actions/credentials'
 import { CredentialReveal } from '@/components/credential-reveal'
+import { RenewalQuoteButton } from '@/components/renewal-quote-button'
 import { getSiteDetail } from '@/server/queries'
 import { asc } from 'drizzle-orm'
 
@@ -319,6 +320,11 @@ export default async function SiteDetailPage({
     (s) => s.isOurs && s.status === 'active',
   )
   const missingPrice = billable.filter((s) => !s.priceAmount)
+  // 還沒被任何報價單涵蓋、可以開進續約報價的項目（依到期日排序，第一筆為錨點）
+  const quotable = billable
+    .filter((s) => s.renewalState === 'upcoming' && !s.currentQuoteId && s.priceAmount)
+    .sort((a, b) => a.expiresAt.localeCompare(b.expiresAt))
+  const renewalAnchor = quotable[0]
 
   return (
     <div className="space-y-6">
@@ -355,7 +361,12 @@ export default async function SiteDetailPage({
 
       <Card
         title="服務項目"
-        description="每一個會到期的東西都是獨立一筆：網域、主機、SSL、維護合約各自有到期日與價格"
+        description={
+          renewalAnchor
+            ? `最早可續約：${renewalAnchor.identifier}（${formatTw(renewalAnchor.expiresAt)} 到期）。開立時會把之後一段期間內到期的項目合併成一張`
+            : '每一個會到期的東西都是獨立一筆：網域、主機、SSL、維護合約各自有到期日與價格'
+        }
+        action={renewalAnchor ? <RenewalQuoteButton siteId={site.id} /> : undefined}
       >
         {site.services.length === 0 ? (
           <EmptyState

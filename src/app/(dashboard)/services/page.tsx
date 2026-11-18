@@ -1,5 +1,6 @@
 import Link from 'next/link'
 
+import { RenewalQuoteButton } from '@/components/renewal-quote-button'
 import {
   Badge,
   Card,
@@ -69,7 +70,38 @@ function applyFilter(rows: Row[], filter: FilterKey): Row[] {
   }
 }
 
-function ServiceTable({ rows }: { rows: Row[] }) {
+/** 可以開進續約報價的項目：我方代管、有售價、尚未被任何報價單涵蓋 */
+function isQuotable(row: Row): boolean {
+  return (
+    row.isOurs &&
+    row.renewalState === 'upcoming' &&
+    !row.currentQuoteId &&
+    Boolean(row.priceAmount)
+  )
+}
+
+/**
+ * 每個網站只在「最早到期的可報價項目」那一列放按鈕：同一網站的報價會合併，
+ * 每列都放會讓人以為要按好幾次。rows 已依到期日排序。
+ */
+function renewalButtonRows(rows: Row[]): Set<string> {
+  const seen = new Set<string>()
+  const ids = new Set<string>()
+  for (const row of rows) {
+    if (!isQuotable(row) || seen.has(row.siteId)) continue
+    seen.add(row.siteId)
+    ids.add(row.id)
+  }
+  return ids
+}
+
+function ServiceTable({
+  rows,
+  buttonRows,
+}: {
+  rows: Row[]
+  buttonRows: Set<string>
+}) {
   return (
     <Table>
       <thead>
@@ -81,6 +113,7 @@ function ServiceTable({ rows }: { rows: Row[] }) {
           <Th>倒數</Th>
           <Th align="right">售價</Th>
           <Th>續約狀態</Th>
+          <Th />
         </tr>
       </thead>
       <tbody>
@@ -143,6 +176,22 @@ function ServiceTable({ rows }: { rows: Row[] }) {
                   {RENEWAL_STATE_LABEL[row.renewalState]}
                 </Badge>
               </Td>
+              <Td align="right">
+                {buttonRows.has(row.id) ? (
+                  <RenewalQuoteButton
+                    siteId={row.siteId}
+                    label="開立續約報價"
+                    variant="secondary"
+                  />
+                ) : row.currentQuoteId ? (
+                  <Link
+                    href={`/quotes/${row.currentQuoteId}`}
+                    className="text-sm whitespace-nowrap text-accent hover:underline"
+                  >
+                    查看報價單
+                  </Link>
+                ) : null}
+              </Td>
             </tr>
           )
         })}
@@ -162,6 +211,8 @@ export default async function ServicesPage({
 
   const all = await listActiveServices()
   const rows = applyFilter(all, filter)
+  // 以「全部項目」決定按鈕位置，篩選後才不會在同網站的較晚項目上多出一顆
+  const buttonRows = renewalButtonRows(all)
 
   const grouped = GROUP_ORDER.map((urgency) => ({
     urgency,
@@ -227,7 +278,7 @@ export default async function ServicesPage({
                 </span>
               </div>
               <Card>
-                <ServiceTable rows={group.rows} />
+                <ServiceTable rows={group.rows} buttonRows={buttonRows} />
               </Card>
             </div>
           ))}

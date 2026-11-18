@@ -108,7 +108,7 @@ export function emailLayout(title: string, body: string): string {
     </div>
   </div>
   <p style="max-width:640px;margin:16px auto 0;font-size:12px;color:#667085;text-align:center;">
-    此信由網站續約管理系統自動發送
+    此信由冠澄數位行銷系統自動發送
   </p>
 </body>
 </html>`

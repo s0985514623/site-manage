@@ -300,6 +300,27 @@ paths:
         '400': { $ref: '#/components/responses/Violation' }
         '404': { $ref: '#/components/responses/Violation' }
 
+  /sites/{siteId}/renewal-quote:
+    post:
+      tags: [quote]
+      operationId: createRenewalQuoteManually
+      summary: 管理者手動開立續約報價單（不檢查觸發天數，產生後停在草稿）
+      x-implementation: server-action
+      x-feature: features/quote/管理者手動開立續約報價單.feature
+      parameters:
+        - name: siteId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '201':
+          description: 已建立草稿
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuoteSummary' }
+        '404': { $ref: '#/components/responses/Violation' }
+        '422': { $ref: '#/components/responses/Violation' }
+
   /api/line/webhook:
     post:
       tags: [line, quote]
@@ -494,6 +515,8 @@ components:
         - ALREADY_PAID
         - PROJECT_HAS_QUOTES
         - HANDOVER_NOT_ALLOWED
+        - NO_RENEWABLE_SERVICE
+        - MIXED_CURRENCY
 
     ActionOk:
       type: object

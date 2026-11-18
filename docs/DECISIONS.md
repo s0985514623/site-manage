@@ -21,7 +21,7 @@
   | `cd749bc` | 第 6 階段：PHP 外部監控腳本 |
   | `ff36bdd` | 追加：專案多段自訂時程（跨日事件同步日曆） |
   | `d7ae681` | 追加：報價單自動用印（乙方大小章） |
-- 驗證狀態：210 個測試通過、規格範例覆蓋 130/130、`npm run verify`、build、lint 皆通過。
+- 驗證狀態：219 個測試通過、規格範例覆蓋 139/139、`npm run verify`、build、lint 皆通過。
 - **部署暫緩**：使用者說「先不用部署上線」。等使用者明確說要上線才做 push / 部署。
 
 ---
@@ -45,6 +45,10 @@
 - 手動模式下由後台按「寄出」，系統經 Resend 寄出（不是使用者自己用 Gmail 寄附件）。
 - 寄送採「先搶佔（conditional UPDATE）再寄，失敗釋放」，防止重複寄送／重複收款。
 - 專案也可以產生報價單 → `quotes.site_id`、`anchor_date` 改為 nullable，新增 `project_id`；CHECK 至少有網站或專案其一。
+- **手動開立續約報價單**（2026-11-18 追加）：網站頁「服務項目」卡片右上、到期總表每個網站最早可報價那列有按鈕。
+  - 與排程共用 `groupForSite`（視窗合併、售價、幣別檢查），但**不檢查觸發天數**；產生後停在 `draft`、**不推 LINE**，直接跳到報價單頁由管理者寄出。
+  - 失敗：`NOT_FOUND`、`NO_RENEWABLE_SERVICE`（沒項目／沒售價／合計 0／已被涵蓋）、`MIXED_CURRENCY`。
+  - `createQuoteForGroup` 認領服務改為條件式（`current_quote_id IS NULL`），連點或與排程同時跑不會開出重複報價單。
 - 防漏四件套全做：報價追蹤（`quote_followup_days`）、收款追蹤（`paid_on`/`paid_amount`）、排程掛掉告警、每週週報。
 
 ### 專案
@@ -101,7 +105,7 @@
 
 ## 5. Email 架構（已設定完成，使用者確認可用）
 
-- 寄信：Resend（`MAIL_FROM` = notice@ren-codes.com），VPS **不需要 mail server**。
+- 寄信：Resend（`MAIL_FROM` = 冠澄數位行銷 <service@ren-codes.com>），VPS **不需要 mail server**。
 - 收信：Cloudflare Email Routing 把 service@ren-codes.com 轉到使用者的 Gmail。
 - 回信：Gmail「以這個地址寄信」走 smtp.resend.com:465。
 - 報價信的 Reply-To ＝ 設定頁「公司 Email」（service@ren-codes.com）。
