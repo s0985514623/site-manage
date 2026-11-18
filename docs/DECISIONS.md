@@ -109,6 +109,7 @@
 - VPS 上的網路名稱是底線：`proxy_site_manager`、`db_site_manager`。
 - **手動重啟容器必須帶 `APP_IMAGE`**（`.env` 沒有存映像版本，直接 `docker compose up` 會退回 whoami 佔位映像）：
   `sudo -u deploy env APP_IMAGE="ghcr.io/s0985514623/site-manage:$(cat .last_good_tag)" docker compose -p site-manager -f docker-compose.yml up -d --no-deps app`
+- 正式 `.env` 必須有 `AUTH_URL=https://site-manager.ren-codes.com`：沒有的話 Auth.js 把回呼網址算成 `https://0.0.0.0:3000`，Google 登入失敗（error=Configuration）。
 - CI 的 `typecheck` 會先跑 `next typegen`（乾淨環境沒有 `.next/types`）。
 
 ---

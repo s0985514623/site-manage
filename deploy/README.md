@@ -102,6 +102,9 @@
     ```dotenv
     NODE_ENV=production
     APP_URL=https://site-manager.ren-codes.com
+    # Auth.js 在容器內會把自己當成 0.0.0.0:3000，必須明確指定對外網址，否則 Google 登入回 error=Configuration
+    AUTH_URL=https://site-manager.ren-codes.com
+    AUTH_TRUST_HOST=true
     TZ=Asia/Taipei
     # 密碼含特殊字元時要 URL encode；步驟 5 用 hex 產生，不需要
     DATABASE_URL=postgresql://site_manager:<步驟 5 的密碼>@postgres:5432/site_manager
