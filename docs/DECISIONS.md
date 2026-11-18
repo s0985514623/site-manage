@@ -1,0 +1,142 @@
+# 決策紀錄（Decision Log）
+
+> 給下一次對話（人或 AI）快速接手用。每條決策都寫「決定了什麼」＋「為什麼／怎麼套用」。
+> 細節規格看 `specs/`，實作計畫看 `plans/site-ops-expansion/`，澄清問答原文看 `specs/clarify/2026-11-16-1046.md`。
+> 最後更新：2026-11-18
+
+---
+
+## 0. 目前狀態（先看這裡）
+
+- 分支：`feat/site-ops-expansion`（**尚未 push、尚未合併到 `master`**）
+- 第 0～6 階段＋兩個追加功能已完成並 commit：
+  | Commit | 內容 |
+  |---|---|
+  | `bee34b4` | 第 0 階段：Vitest 測試基礎 |
+  | `9bcec8c` | 第 1 階段：migration 0001、報價單可不綁網站 |
+  | `757e014` | 第 2 階段：專案、里程碑、專案管理日曆、轉維運、專案報價 |
+  | `49d8218` | 第 3 階段：寄送模式、手動寄出、報價與收款追蹤 |
+  | `ec6eade` | 第 4 階段：LINE 查詢與快速新增專案 |
+  | `1006e28` | 第 5 階段：週報、8 支排程心跳、systemd timer |
+  | `cd749bc` | 第 6 階段：PHP 外部監控腳本 |
+  | `ff36bdd` | 追加：專案多段自訂時程（跨日事件同步日曆） |
+  | `d7ae681` | 追加：報價單自動用印（乙方大小章） |
+- 驗證狀態：210 個測試通過、規格範例覆蓋 130/130、`npm run verify`、build、lint 皆通過。
+- **部署暫緩**：使用者說「先不用部署上線」。等使用者明確說要上線才做 push / 部署。
+
+---
+
+## 1. 產品方向（使用者原始目標）
+
+1. 管理既有網站客戶，到期前自動建立報價單，由使用者手動寄出（未來可改為 LINE 確認後自動寄）。
+2. 建立新專案並連結 Google Calendar 做專案管理。
+3. 除網頁後台外，也能透過 LINE 查詢／新增／管理。
+4. 盡可能自動化、減少人工遺漏。
+
+**使用者只有一人**（單一使用者，不做多帳號權限）。
+
+---
+
+## 2. 功能決策
+
+### 報價與寄送
+- **寄送模式開關**：手動寄出 ↔ LINE 確認後自動寄。設定欄位 `settings.auto_send_enabled`。
+  - D1：既有安裝升級後**維持自動寄**（migration 0001 末尾 `UPDATE settings SET auto_send_enabled = true`）。
+- 手動模式下由後台按「寄出」，系統經 Resend 寄出（不是使用者自己用 Gmail 寄附件）。
+- 寄送採「先搶佔（conditional UPDATE）再寄，失敗釋放」，防止重複寄送／重複收款。
+- 專案也可以產生報價單 → `quotes.site_id`、`anchor_date` 改為 nullable，新增 `project_id`；CHECK 至少有網站或專案其一。
+- 防漏四件套全做：報價追蹤（`quote_followup_days`）、收款追蹤（`paid_on`/`paid_amount`）、排程掛掉告警、每週週報。
+
+### 專案
+- 類別固定四種：`new_site`（新網站製作）、`custom_plugin`（客製外掛）、`bug_fix`（BUG 排除）、`other`。
+- 所有類別共用狀態：待開始 → 進行中 → 待驗收 → 已完成（共用流程＋類別標籤，不做各類別不同流程）。
+- 專案**可以不綁網站**。
+- 里程碑：多個自訂里程碑。
+- 時程：可自由新增多段（例如「前端開發」「後端開發」），各自有開始日（選填）與結束日，開始 > 結束時回 `INVALID_DATE_RANGE`；開始日＝結束日或沒填開始日時視為單日里程碑。
+- 只有 `new_site` 完成時跳出「轉維運」表單：勾選服務、填到期日與價格 → 建立 services（`source_project_id` 記來源）。
+
+### Google Calendar
+- 另開一個「專案管理」日曆（`settings.gcal_project_calendar_id`），**單向寫入**（系統 → 日曆，不讀回）。
+- 事件標題前綴：【專案截止】、【時程】（跨日事件）、【里程碑】。
+
+### LINE
+- 支援查詢＋快速新增（**只做新增專案**），用按鈕一步一步選（quick reply）。
+- Quick reply 上限 13 顆：12 個客戶＋搜尋＋取消會超過，所以 12 個客戶時省略取消鈕；任何步驟輸入「取消」都能取消。
+- Rich Menu 用一次性腳本建立：`npm run line:richmenu`（圖檔 `scripts/assets/richmenu.png`）。
+
+### 監控
+- 排程（cron）成功時 ping 心跳（`runCronJob` 包裝，`HEARTBEAT_URL` / `HEARTBEAT_TOKEN`）。
+- 外部監控放在使用者**另一台 PHP 主機**：`tools/php-monitor/`，心跳逾時就用 LINE＋email 告警；兩者都失敗時取消已告警標記，下次重試。
+
+### 報價單用印（大小章）
+- 使用者在後台「設定 → 報價單用印」自行上傳大章（公司章）與小章（負責人章），PNG/JPEG、2MB 以內。
+- 圖檔存資料庫（`stamps` 表，bytea），**不進 git、不交給 AI**；預覽 API 需登入。
+- 有「自動用印」開關（`settings.stamp_enabled`）；甲方用印欄永遠留白給客戶蓋。
+- PDF：大章 66pt、小章 34pt，甲乙方用印欄高度都是 72pt。
+
+---
+
+## 3. 技術與流程決策
+
+- **規格驅動（AIBDD）**：`specs/` 裡有 activities、19 個 `.feature`（130 個 Examples）、`entity/erm.dbml`、`api/api.yml`。新功能先寫 `.feature` 再實作。
+- **測試**：手寫 Vitest（D2），獨立測試資料庫 `TEST_DATABASE_URL`（必須是本機、DB 名稱以 `_test` 結尾）；外部 API（LINE / Resend / Google / 心跳）以 fake fetch 攔截；`今天是()` 固定時間。
+  - `npm run test:coverage-map`（`scripts/check-feature-coverage.ts --all`）比對 Example 名稱與測試名稱，必須 100%。
+- **CI 失敗擋住部署**（D3）。
+- 服務層：`src/server/<domain>` 回傳 `ActionState { ok?, error?, violationType? }`；server action 只是薄包裝。
+- 通知去重靠 partial unique index。
+- Next.js 16：middleware 改名為 proxy（`src/proxy.ts`）；新增路由後要跑 `npx next typegen` 才有 `PageProps<'/route'>` 型別。
+- 原生 SQL 模板內不要直接放 `Date` 物件，要用 `.toISOString()`（postgres.js 會炸）。
+
+---
+
+## 4. 部署決策（暫緩執行）
+
+- 依 `D:\Dev\line-accounting\deploy\SHARED-VPS-SPEC.md` 共用 VPS 規格：VPS 已有 Docker＋Caddy＋共用 Postgres。
+- App 代號 `site-manager`，全新部署（還沒上線過），image `ghcr.io/s0985514623/site-support`。
+- 排程用 **systemd timer**（8 支 cron＋備份），在容器內執行 `scripts/run-cron.mjs`。
+- Caddy 擋掉外部存取 `/api/cron/*`；健康檢查 `/healthz`。
+- 部署步驟見 `deploy/README.md`（A～I）。
+
+---
+
+## 5. Email 架構（已設定完成，使用者確認可用）
+
+- 寄信：Resend（`MAIL_FROM` = notice@ren-codes.com），VPS **不需要 mail server**。
+- 收信：Cloudflare Email Routing 把 service@ren-codes.com 轉到使用者的 Gmail。
+- 回信：Gmail「以這個地址寄信」走 smtp.resend.com:465。
+- 報價信的 Reply-To ＝ 設定頁「公司 Email」（service@ren-codes.com）。
+- 不要建議架 mail server 或改根網域 MX。
+
+---
+
+## 6. 資料與安全約定
+
+- 使用者的 Google Sheet 網站資料已匯入**本機開發資料庫**（19 客戶、23 網站、31 服務、19 聯絡人；之後使用者自行加到 21 客戶）。
+  - 網域到期日是推算的，備註「待 WHOIS 確認」；網域價格空白。
+  - 帳密 19 筆以 AES-256-GCM 加密存入（同 `src/lib/crypto.ts` 格式），明文檔已刪除。
+- 帳密只能加密儲存；章的圖檔只由使用者自己上傳。
+- 使用者 email 等個資不可送到外部服務。
+- 開發 DB 沒有 migrations 表，schema 變更用 `drizzle-kit push --force`；`npm run verify` 用獨立 DB `site_support_verify`。
+- 不要在使用者的 Chrome 寫入測試 session cookie（曾覆蓋掉使用者登入）。
+
+---
+
+## 7. 已知非問題
+
+- 刪除時 console 出現 `e?.startsWith is not a function`：來自 Chrome 擴充功能，不影響操作，不用修。
+- 新增客戶一直轉圈：dev 重新編譯後舊分頁失效造成，重整即可（已確認）。
+
+---
+
+## 8. 協作偏好
+
+- 需要使用者做決定時，用**互動式選單**（AskUserQuestion）給選項。
+- 回覆用繁體中文、ADHD 友善格式（第一行就是行動、步驟編號、具體時間估計）。
+
+---
+
+## 9. 待辦（使用者端）
+
+1. 重新登入 localhost 後台。
+2. 把大小章去背存成 PNG，到「設定 → 報價單用印」上傳，開任一報價單「檢視 PDF」確認。
+3. 決定何時上線 → 再進行 push、合併與部署。
