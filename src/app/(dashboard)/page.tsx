@@ -1,8 +1,11 @@
 import Link from 'next/link'
 
+import { Badge, Card, DaysBadge, Table, Td, Th } from '@/components/ui'
+import { daysUntil } from '@/lib/dates'
 import { features } from '@/lib/env'
+import { SITE_STATUS_LABEL } from '@/lib/labels'
 import { getSettings } from '@/lib/settings'
-import { dashboardCounts } from '@/server/queries'
+import { dashboardCounts, listSites, type SiteRow } from '@/server/queries'
 
 export const metadata = { title: '儀表板' }
 export const dynamic = 'force-dynamic'
@@ -42,8 +45,89 @@ function SetupRow({ done, label, hint }: { done: boolean; label: string; hint: s
   )
 }
 
+const SITE_STATUS_TONE = {
+  building: 'accent',
+  live: 'safe',
+  paused: 'warning',
+  closed: 'neutral',
+} as const
+
+function SiteTable({ rows }: { rows: SiteRow[] }) {
+  return (
+    <Table>
+      <thead>
+        <tr>
+          <Th>網站</Th>
+          <Th>客戶</Th>
+          <Th>狀態</Th>
+          <Th align="right">服務項目</Th>
+          <Th>最近到期</Th>
+          <Th />
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={row.id} className="hover:bg-surface-muted">
+            <Td>
+              <Link
+                href={`/sites/${row.id}`}
+                className="font-medium hover:text-accent"
+              >
+                {row.name}
+              </Link>
+              {row.primaryUrl && (
+                <div className="mt-0.5 truncate text-xs text-muted">
+                  {row.primaryUrl.replace(/^https?:\/\//, '')}
+                </div>
+              )}
+            </Td>
+            <Td>
+              <Link
+                href={`/clients/${row.clientId}`}
+                className="text-muted hover:text-accent"
+              >
+                {row.clientName}
+              </Link>
+            </Td>
+            <Td>
+              <Badge tone={SITE_STATUS_TONE[row.status]}>
+                {SITE_STATUS_LABEL[row.status]}
+              </Badge>
+            </Td>
+            <Td align="right" className="tabular">
+              {row.serviceCount}
+            </Td>
+            <Td>
+              {row.nextExpiresAt ? (
+                <span className="flex items-center gap-2">
+                  <span className="tabular text-muted">{row.nextExpiresAt}</span>
+                  <DaysBadge days={daysUntil(row.nextExpiresAt)} />
+                </span>
+              ) : (
+                <span className="text-muted">—</span>
+              )}
+            </Td>
+            <Td align="right">
+              <Link
+                href={`/sites/${row.id}`}
+                className="whitespace-nowrap text-sm text-accent hover:underline"
+              >
+                管理
+              </Link>
+            </Td>
+          </tr>
+        ))}
+      </tbody>
+    </Table>
+  )
+}
+
 export default async function DashboardPage() {
-  const [stat, config] = await Promise.all([dashboardCounts(), getSettings()])
+  const [stat, config, siteRows] = await Promise.all([
+    dashboardCounts(),
+    getSettings(),
+    listSites(),
+  ])
 
   const setupDone =
     features.googleLogin && features.email && features.lineApproval
@@ -63,6 +147,12 @@ export default async function DashboardPage() {
         <StatCard label="網站" value={stat.sites} />
         <StatCard label="服務項目" value={stat.services} />
       </div>
+
+      {siteRows.length > 0 && (
+        <Card title="網站管理" description="點網站名稱進入管理頁">
+          <SiteTable rows={siteRows} />
+        </Card>
+      )}
 
       {stat.services === 0 && (
         <div className="rounded-xl border border-border bg-surface p-6">

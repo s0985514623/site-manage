@@ -25,7 +25,7 @@ export default async function LoginPage({
     <main className="flex flex-1 items-center justify-center px-4 py-12">
       <div className="w-full max-w-sm">
         <div className="rounded-xl border border-border bg-surface p-8 shadow-sm">
-          <h1 className="text-xl font-bold">網站續約管理</h1>
+          <h1 className="text-xl font-bold">網站管理</h1>
           <p className="mt-2 text-sm text-muted">
             客戶網站的網域、主機與維護合約到期追蹤
           </p>

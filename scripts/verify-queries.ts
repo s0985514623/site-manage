@@ -48,6 +48,7 @@ async function main() {
     q.listActiveServices,
   )) as Awaited<ReturnType<typeof q.listActiveServices>> | null
   await check('報價單列表 listQuotes()', q.listQuotes)
+  await check('網站列表 listSites()', q.listSites)
 
   if (clientRows?.length) {
     const id = clientRows[0].id

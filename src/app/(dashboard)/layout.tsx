@@ -24,7 +24,7 @@ export default async function DashboardLayout({
       <header className="sticky top-0 z-10 border-b border-border bg-surface/95 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-6 px-4">
           <Link href="/" className="shrink-0 text-sm font-bold">
-            網站續約管理
+            網站管理
           </Link>
 
           <nav className="flex flex-1 items-center gap-1 overflow-x-auto">

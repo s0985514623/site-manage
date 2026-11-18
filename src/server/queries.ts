@@ -145,6 +145,32 @@ export async function quoteRecipients(clientId: string): Promise<string[]> {
   return rows.map((r) => r.email!).filter(Boolean)
 }
 
+/**
+ * 儀表板「網站管理」：所有網站＋使用中服務項目數與最近到期日。
+ * 最近到期日只看使用中的項目，已停用的不該把網站標成快到期。
+ */
+export async function listSites() {
+  return db
+    .select({
+      id: sites.id,
+      name: sites.name,
+      primaryUrl: sites.primaryUrl,
+      status: sites.status,
+      clientId: clients.id,
+      clientName: clients.name,
+      serviceCount: count(services.id),
+      nextExpiresAt: sql<string | null>`min(${services.expiresAt})::text`,
+    })
+    .from(sites)
+    .innerJoin(clients, eq(sites.clientId, clients.id))
+    .leftJoin(
+      services,
+      and(eq(services.siteId, sites.id), eq(services.status, 'active')),
+    )
+    .groupBy(sites.id, clients.id)
+    .orderBy(asc(clients.name), asc(sites.name))
+}
+
 export async function dashboardCounts() {
   const [[c], [s], [sv]] = await Promise.all([
     db.select({ n: count() }).from(clients),
@@ -156,4 +182,5 @@ export async function dashboardCounts() {
 
 export type ServiceRow = Awaited<ReturnType<typeof listActiveServices>>[number]
 export type ClientRow = Awaited<ReturnType<typeof listClients>>[number]
+export type SiteRow = Awaited<ReturnType<typeof listSites>>[number]
 export type QuoteRow = Awaited<ReturnType<typeof listQuotes>>[number]

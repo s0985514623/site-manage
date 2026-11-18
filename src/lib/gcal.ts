@@ -278,7 +278,7 @@ export async function ensureCalendar(
     body: JSON.stringify({
       summary: name,
       description:
-        '由網站續約管理系統自動維護。手動修改的內容會在下次同步時被覆蓋。',
+        '由網站管理系統自動維護。手動修改的內容會在下次同步時被覆蓋。',
       timeZone: 'Asia/Taipei',
     }),
   })

@@ -12,8 +12,8 @@ const notoSansTC = Noto_Sans_TC({
 
 export const metadata: Metadata = {
   title: {
-    default: '網站續約管理',
-    template: '%s · 網站續約管理',
+    default: '網站管理',
+    template: '%s · 網站管理',
   },
   description: '客戶網站的網域、主機、SSL 與維護合約到期追蹤與續約報價系統',
 }
