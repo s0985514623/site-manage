@@ -37,7 +37,7 @@
 | `site-manager-cron-detect` | 每週一 08:00 | `/api/cron/detect` |
 | `site-manager-cron-expiry-scan` | 每日 09:00 | `/api/cron/expiry-scan` |
 | `site-manager-cron-quote-draft` | 每日 09:30 | `/api/cron/quote-draft` |
-| `site-manager-cron-uptime` | 每小時 :15 | `/api/cron/uptime` |
+| `site-manager-cron-uptime` | 每 15 分鐘 | `/api/cron/uptime` |
 | `site-manager-cron-weekly-report` | 每週一 09:00 | `/api/cron/weekly-report` |
 | `site-manager-cron-quote-followup` | 每日 09:40 | `/api/cron/quote-followup` |
 | `site-manager-cron-payment-followup` | 每日 09:45 | `/api/cron/payment-followup` |

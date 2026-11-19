@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 
 /**
- * 網站存活監控（建議每小時執行）。
+ * 網站存活監控（每 15 分鐘執行）。
  *
  *   curl -H "Authorization: Bearer $CRON_SECRET" "$APP_URL/api/cron/uptime"
  *
