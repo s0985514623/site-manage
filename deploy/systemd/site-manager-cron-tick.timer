@@ -1,0 +1,18 @@
+# /etc/systemd/system/site-manager-cron-tick.timer
+# 排程派發器：每分鐘呼叫 /api/cron/tick，由 app 依 scheduled_tasks 表（後台「設定 → 排程任務」）
+# 決定哪些任務到期該執行。取代原本 8 支寫死時間的 timer。
+#
+# 上一次 tick 還沒跑完（例如 WHOIS 偵測要幾分鐘）時，systemd 不會再啟動同一個 service，
+# 那幾分鐘的 tick 直接略過；錯過的任務在下一次 tick 補跑一次，不會重複。
+[Unit]
+Description=site-manager cron: tick（每分鐘派發到期的排程任務）
+
+[Timer]
+OnCalendar=*-*-* *:*:00 Asia/Taipei
+AccuracySec=1s
+# 停機期間錯過的 tick 不追跑：任務本身的 next_run_at 會讓錯過的任務補跑一次
+Persistent=false
+Unit=site-manager-cron@tick.service
+
+[Install]
+WantedBy=timers.target

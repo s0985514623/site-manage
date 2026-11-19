@@ -40,7 +40,11 @@ VPS 自己停了就發不出任何告警，所以這件事一定要由外部主�
    HEARTBEAT_URL=https://<你的網域>/site-monitor/heartbeat.php
    HEARTBEAT_TOKEN=<第 2 步的 token>
    ```
-   然後重啟 app：`docker compose -p site-manager -f docker-compose.yml up -d --no-deps app`
+   然後重啟 app（必須在該目錄、必須帶 `APP_IMAGE`，否則會退回 whoami 佔位映像）：
+   ```bash
+   cd /opt/my-services/apps/site-manager
+   sudo -u deploy env APP_IMAGE="ghcr.io/s0985514623/site-manage:$(cat .last_good_tag)" docker compose -p site-manager -f docker-compose.yml up -d --no-deps app
+   ```
 7. 驗證：VPS 上 `sudo systemctl start site-manager-cron@uptime.service`，
    PHP 主機的 `data/state.json` 會出現 `"uptime": <時間>`
 

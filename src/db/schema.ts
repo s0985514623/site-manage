@@ -650,6 +650,63 @@ export const stamps = pgTable('stamps', {
 })
 
 /* ------------------------------------------------------------------ */
+/* 排程任務（設定頁可調整時間、新增任務）                                 */
+/* ------------------------------------------------------------------ */
+
+export const scheduledTaskKindEnum = pgEnum('scheduled_task_kind', [
+  'builtin', // 內建：/api/cron/<job>
+  'line_message', // 推一則 LINE 文字給管理者
+  'http_request', // 呼叫外部網址
+])
+
+export const scheduleFrequencyEnum = pgEnum('schedule_frequency', [
+  'interval',
+  'daily',
+  'weekly',
+  'monthly',
+])
+
+/**
+ * VPS 只剩一支每分鐘的 systemd timer 呼叫 /api/cron/tick，
+ * 由 tick 依這張表決定哪些任務到期該執行。
+ *
+ * next_run_at 為 NULL 代表「待排定」：tick 只幫它算出下次時間，不立即執行。
+ * 這樣 migration 種下內建任務、或從停用改回啟用時，不會一上線就補跑一輪。
+ */
+export const scheduledTasks = pgTable(
+  'scheduled_tasks',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    kind: scheduledTaskKindEnum('kind').notNull(),
+    /** kind = builtin：/api/cron/ 後面的名稱 */
+    job: text('job'),
+    /** kind = line_message */
+    message: text('message'),
+    /** kind = http_request */
+    url: text('url'),
+    method: text('method'),
+    frequency: scheduleFrequencyEnum('frequency').notNull(),
+    intervalMinutes: integer('interval_minutes'),
+    /** 'HH:MM'，台北時間 */
+    timeOfDay: text('time_of_day'),
+    /** 0 = 週日 … 6 = 週六 */
+    weekday: integer('weekday'),
+    dayOfMonth: integer('day_of_month'),
+    enabled: boolean('enabled').notNull().default(true),
+    /** migration 種下的內建任務：可改時間、可停用，不可刪除 */
+    system: boolean('system').notNull().default(false),
+    nextRunAt: timestamp('next_run_at', { withTimezone: true }),
+    lastRunAt: timestamp('last_run_at', { withTimezone: true }),
+    lastOk: boolean('last_ok'),
+    lastMessage: text('last_message'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('scheduled_tasks_due_idx').on(t.enabled, t.nextRunAt)],
+)
+
+/* ------------------------------------------------------------------ */
 /* 通知發送紀錄（防重複寄送）                                             */
 /* ------------------------------------------------------------------ */
 
@@ -989,3 +1046,4 @@ export type NewProject = typeof projects.$inferInsert
 export type ProjectMilestone = typeof projectMilestones.$inferSelect
 export type LineConversation = typeof lineConversations.$inferSelect
 export type Stamp = typeof stamps.$inferSelect
+export type ScheduledTask = typeof scheduledTasks.$inferSelect

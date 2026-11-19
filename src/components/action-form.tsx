@@ -41,6 +41,7 @@ export function ActionForm({
   resetOnSuccess = false,
   onSuccess,
   footer,
+  savedLabel = '已儲存',
   className = '',
 }: {
   action: Action
@@ -50,6 +51,8 @@ export function ActionForm({
   resetOnSuccess?: boolean
   onSuccess?: () => void
   footer?: ReactNode
+  /** 成功提示文字（例：「立即執行」用「已執行」） */
+  savedLabel?: string
   className?: string
 }) {
   const [state, formAction] = useActionState(action, emptyState)
@@ -86,7 +89,7 @@ export function ActionForm({
         <FormError message={state.error} />
         <div className="flex items-center gap-3">
           <SubmitButton variant={submitVariant}>{submitLabel}</SubmitButton>
-          {saved && <span className="text-sm text-safe">已儲存</span>}
+          {saved && <span className="text-sm text-safe">{savedLabel}</span>}
           {footer}
         </div>
       </div>

@@ -272,6 +272,45 @@ Table line_conversations {
   Note: 'LINE 快速新增專案的逐步問答暫存；取消、完成或過期即刪除'
 }
 
+// [NEW 2026-11-19]
+Enum scheduled_task_kind {
+  builtin       [note: '內建：/api/cron/<job>']
+  line_message  [note: '推一則 LINE 給管理者（額度不足改寄 Email）']
+  http_request  [note: '呼叫外部網址']
+}
+
+Enum schedule_frequency {
+  interval
+  daily
+  weekly
+  monthly
+}
+
+// [NEW 2026-11-19]
+Table scheduled_tasks {
+  id               uuid                [pk]
+  name             text                [not null]
+  kind             scheduled_task_kind [not null]
+  job              text                [note: 'kind = builtin']
+  message          text                [note: 'kind = line_message']
+  url              text                [note: 'kind = http_request']
+  method           text                [note: 'GET / POST']
+  frequency        schedule_frequency  [not null]
+  interval_minutes integer             [note: '能整除 1440 的固定選項']
+  time_of_day      text                [note: 'HH:MM，台北時間']
+  weekday          integer             [note: '0 = 週日']
+  day_of_month     integer             [note: '1–31；該月沒有就月底']
+  enabled          boolean             [not null, default: true]
+  system           boolean             [not null, default: false, note: 'migration 種下的內建任務，不可刪']
+  next_run_at      timestamptz         [note: 'NULL = 待排定（tick 只排定不執行）']
+  last_run_at      timestamptz
+  last_ok          boolean
+  last_message     text
+  created_at       timestamptz         [not null]
+  updated_at       timestamptz         [not null]
+  Note: '每分鐘的 /api/cron/tick 搶佔 next_run_at 後執行；錯過多次只補跑一次'
+}
+
 // ───────────────────────────── Refs ─────────────────────────────
 
 Ref: contacts.client_id > clients.id [delete: cascade]

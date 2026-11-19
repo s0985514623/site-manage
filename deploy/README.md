@@ -12,7 +12,7 @@
 | `docker-compose.yml` | compose 範本（使用者管理，deploy.sh 不覆寫） | `/opt/my-services/apps/site-manager/docker-compose.yml` |
 | `Caddyfile.site-manager` | 共用 Caddyfile 要加的站台區塊 | 併入 `/opt/my-services/infra` 的 Caddyfile |
 | `backup.sh` | 每日 pg_dump 本 app 的 database | `/opt/my-services/apps/site-manager/backup.sh` |
-| `systemd/*` | 8 支排程 timer + 每日備份 timer | `/etc/systemd/system/` |
+| `systemd/*` | 排程派發 timer（每分鐘 tick）+ 每日備份 timer | `/etc/systemd/system/` |
 
 ## 與 accounting 的差異
 
@@ -22,7 +22,7 @@
 | 資料庫 | database/role `accounting` | database/role **`site_manager`**（底線：PostgreSQL 識別字不能有 `-`） |
 | pre-deploy | `prisma migrate deploy` + seed | `node scripts/migrate.mjs`（drizzle migrator） |
 | 健康檢查 | `/healthz` | `/healthz`（`src/app/healthz/route.ts`，SELECT 1，逾時 3 秒回 503） |
-| 排程 | 無 | 8 支 systemd timer，在容器內跑 `node scripts/run-cron.mjs <端點>` |
+| 排程 | 無 | 1 支每分鐘的 systemd timer，在容器內跑 `node scripts/run-cron.mjs tick`；各任務時間存在資料庫 |
 | 備份 | （另行處理） | `site-manager-backup.timer` 每日 03:00 → `backups/`，保留 14 天 |
 | Caddy | `reverse_proxy accounting-app:3000` | 同上 + `/api/cron/*` 對外 `respond 404` |
 | LINE | Messaging API + LINE Login / LIFF | **只有 Messaging API** |
@@ -30,20 +30,46 @@
 
 ### 排程時間（台北時間）
 
-| timer | 時間 | 端點 |
+VPS 上只有兩支 timer：
+
+| timer | 時間 | 做什麼 |
 | --- | --- | --- |
 | `site-manager-backup` | 每日 03:00 | `backup.sh` |
-| `site-manager-cron-gcal-sync` | 每日 04:00 | `/api/cron/gcal-sync` |
-| `site-manager-cron-detect` | 每週一 08:00 | `/api/cron/detect` |
-| `site-manager-cron-expiry-scan` | 每日 09:00 | `/api/cron/expiry-scan` |
-| `site-manager-cron-quote-draft` | 每日 09:30 | `/api/cron/quote-draft` |
-| `site-manager-cron-uptime` | 每 15 分鐘 | `/api/cron/uptime` |
-| `site-manager-cron-weekly-report` | 每週一 09:00 | `/api/cron/weekly-report` |
-| `site-manager-cron-quote-followup` | 每日 09:40 | `/api/cron/quote-followup` |
-| `site-manager-cron-payment-followup` | 每日 09:45 | `/api/cron/payment-followup` |
+| `site-manager-cron-tick` | 每分鐘 | `/api/cron/tick` → 執行 `scheduled_tasks` 表中到期的任務 |
 
-8 支排程成功跑完都會通知外部監控主機（`.env` 的 `HEARTBEAT_URL`、`HEARTBEAT_TOKEN`，留空則不送）。
-之後新增排程：複製一支 `.timer` 改名、改 `OnCalendar` 與 `Unit=site-manager-cron@<端點>.service` 即可，service 不用新增。
+各任務的時間在**後台「設定 → 排程任務」**調整，也可以在那裡新增 LINE 提醒、呼叫網址、替內建任務多加時段。
+migration `0004` 種下的內建任務（預設時間同舊 timer）：
+
+| 任務 | 預設時間 | 端點 |
+| --- | --- | --- |
+| Google 日曆對帳 | 每日 04:00 | `/api/cron/gcal-sync` |
+| WHOIS／TLS 到期偵測 | 每週一 08:00 | `/api/cron/detect` |
+| 到期掃描與提醒 | 每日 09:00 | `/api/cron/expiry-scan` |
+| LINE 每週週報 | 每週一 09:00 | `/api/cron/weekly-report` |
+| 擬定續約報價草稿 | 每日 09:30 | `/api/cron/quote-draft` |
+| 報價未回覆追蹤 | 每日 09:40 | `/api/cron/quote-followup` |
+| 未收款追蹤 | 每日 09:45 | `/api/cron/payment-followup` |
+| 網站存活監控 | 每 15 分鐘 | `/api/cron/uptime` |
+
+內建任務成功跑完都會通知外部監控主機（`.env` 的 `HEARTBEAT_URL`、`HEARTBEAT_TOKEN`，留空則不送）。
+在後台停用內建任務、或把間隔拉長時，記得一併調整 PHP 監控 `config.php` 的 `jobs` 門檻，否則會誤報停擺。
+
+### 從 8 支 timer 換成 tick（2026-11-19，已上線的 VPS 做一次）
+
+先等含 migration `0004` 的版本部署完成，再換 timer（順序反過來會有幾分鐘沒有排程）：
+
+```powershell
+PS> scp -P 22 D:\Dev\site-support\deploy\systemd\site-manager-cron-tick.timer <admin>@139.162.95.207:/tmp/
+```
+```bash
+$ sudo systemctl disable --now site-manager-cron-{gcal-sync,detect,expiry-scan,quote-draft,uptime,weekly-report,quote-followup,payment-followup}.timer
+$ sudo rm /etc/systemd/system/site-manager-cron-{gcal-sync,detect,expiry-scan,quote-draft,uptime,weekly-report,quote-followup,payment-followup}.timer
+$ sudo install -m 644 /tmp/site-manager-cron-tick.timer /etc/systemd/system/ && rm /tmp/site-manager-cron-tick.timer
+$ sudo systemctl daemon-reload && sudo systemctl enable --now site-manager-cron-tick.timer
+$ systemctl list-timers 'site-manager-*'
+```
+→ 預期：只剩 `site-manager-backup.timer` 與 `site-manager-cron-tick.timer`。
+一分鐘後 `journalctl -u site-manager-cron@tick -n 3` 應有 `tick HTTP 200`；後台排程任務的「下次執行」都有時間。
 
 ---
 
@@ -191,10 +217,10 @@
     ```bash
     $ sudo install -m 644 /tmp/sm-systemd/site-manager-* /etc/systemd/system/ && rm -r /tmp/sm-systemd
     $ sudo systemctl daemon-reload
-    $ sudo systemctl enable --now site-manager-backup.timer site-manager-cron-{gcal-sync,detect,expiry-scan,quote-draft,uptime,weekly-report,quote-followup,payment-followup}.timer
+    $ sudo systemctl enable --now site-manager-backup.timer site-manager-cron-tick.timer
     $ systemctl list-timers 'site-manager-*'
     ```
-    → 預期：列出 9 支 timer（8 支排程 + 備份）與下次執行時間
+    → 預期：列出 2 支 timer（tick + 備份）與下次執行時間
 28. 手動跑一次確認：
     ```bash
     $ sudo systemctl start site-manager-cron@uptime.service && journalctl -u site-manager-cron@uptime -n 5
@@ -244,4 +270,4 @@
 | migration 失敗 | 服務未被更動；檢查 `.env` 的 `DATABASE_URL` 與 `db_site_manager` 網路 |
 | 502（Caddy） | Caddy 未加入 `proxy_site_manager`，或 compose 的 alias 不是 `site-manager-app` |
 | 容器起來就退出、log 有「環境變數設定有誤」 | `.env` 缺必填值（`src/lib/env.ts`），`ENCRYPTION_KEY` 必須是 32 bytes base64 |
-| 排程沒跑 | `systemctl list-timers 'site-manager-*'`、`journalctl -u 'site-manager-cron@*' --since today` |
+| 排程沒跑 | `systemctl list-timers 'site-manager-*'`、`journalctl -u 'site-manager-cron@*' --since today`；後台「設定 → 排程任務」看上次執行結果 |

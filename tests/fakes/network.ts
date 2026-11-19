@@ -10,16 +10,18 @@ import { fakeGoogleCalendar } from './google-calendar'
 
 export type Recorded = { url: string; method: string; body: unknown }
 
-type ServiceName = 'line' | 'resend' | 'google' | 'heartbeat'
+type ServiceName = 'line' | 'resend' | 'google' | 'heartbeat' | 'hook'
 
 const SERVICES: Array<{ name: ServiceName; match: (u: URL) => boolean }> = [
   { name: 'line', match: (u) => u.hostname === 'api.line.me' },
   { name: 'resend', match: (u) => u.hostname === 'api.resend.com' },
   { name: 'google', match: (u) => u.hostname.endsWith('googleapis.com') },
   { name: 'heartbeat', match: (u) => u.hostname === 'heartbeat.test' },
+  // 排程任務「呼叫網址」的假目標
+  { name: 'hook', match: (u) => u.hostname === 'hook.test' },
 ]
 
-const calls: Record<ServiceName, Recorded[]> = { line: [], resend: [], google: [], heartbeat: [] }
+const calls: Record<ServiceName, Recorded[]> = { line: [], resend: [], google: [], heartbeat: [], hook: [] }
 const failing = new Set<ServiceName>()
 let googleResponder: ((req: Recorded) => unknown) | null = null
 

@@ -29,6 +29,7 @@ export const VIOLATION_TYPES = [
   'HANDOVER_NOT_ALLOWED',
   'NO_RENEWABLE_SERVICE',
   'MIXED_CURRENCY',
+  'SYSTEM_TASK_NOT_DELETABLE',
 ] as const
 export type ViolationType = (typeof VIOLATION_TYPES)[number]
 

@@ -2,7 +2,7 @@
 
 > 給下一次對話（人或 AI）快速接手用。每條決策都寫「決定了什麼」＋「為什麼／怎麼套用」。
 > 細節規格看 `specs/`，實作計畫看 `plans/site-ops-expansion/`，澄清問答原文看 `specs/clarify/2026-11-16-1046.md`。
-> 最後更新：2026-11-18
+> 最後更新：2026-11-19
 
 ---
 
@@ -76,6 +76,12 @@
 ### 監控
 - 排程（cron）成功時 ping 心跳（`runCronJob` 包裝，`HEARTBEAT_URL` / `HEARTBEAT_TOKEN`）。
 - 外部監控放在使用者**另一台 PHP 主機**：`tools/php-monitor/`，心跳逾時就用 LINE＋email 告警；兩者都失敗時取消已告警標記，下次重試。
+- **排程任務改由資料庫管理**（2026-11-19）：設定頁「排程任務」可調整 8 支內建任務的時間／停用，並可新增三種任務：LINE 提醒（額度不足改寄 Email）、呼叫網址（GET/POST，30 秒逾時）、替內建任務多加時段。
+  - 時間用選單式（每 N 分鐘／每天／每週幾／每月幾號 + HH:MM，台北時間），不開放 cron 表達式。每月 29–31 號遇小月改在月底。
+  - VPS 只剩一支每分鐘的 `site-manager-cron-tick.timer` → `/api/cron/tick` → `runDueTasks()`（`src/server/ops/scheduled-tasks.ts`）。
+  - 執行前先條件式更新 `next_run_at`（搶佔），重疊的 tick 不會重複執行；停機錯過多次只補跑一次；`next_run_at` 為 NULL 的任務第一次 tick 只排定不執行（migration 種下的任務上線時不會補跑）。
+  - 內建任務（`system = true`）不可刪除（`SYSTEM_TASK_NOT_DELETABLE`），只能改名稱、時間、啟用；執行時直接呼叫原本的 route handler，心跳行為不變。
+  - 停用或拉長內建任務間隔時，PHP 監控的 `jobs` 門檻要手動同步調整。
 - 網站存活監控（uptime）每 15 分鐘一次（2026-11-19 從每小時改）：連續 2 次失敗才告警，約 30 分鐘內通知；負擔可忽略。PHP 心跳門檻同步改 1 小時。
 
 ### 報價單用印（大小章）
@@ -103,7 +109,7 @@
 
 - 依 `D:\Dev\line-accounting\deploy\SHARED-VPS-SPEC.md` 共用 VPS 規格：VPS 已有 Docker＋Caddy＋共用 Postgres。
 - App 代號 `site-manager`，image `ghcr.io/s0985514623/site-manage`。
-- 排程用 **systemd timer**（8 支 cron＋備份），在容器內執行 `scripts/run-cron.mjs`。
+- 排程用 **systemd timer**：每分鐘一支 tick＋每日備份（2026-11-19 前是 8 支寫死時間的 timer），在容器內執行 `scripts/run-cron.mjs`。換 timer 的步驟見 `deploy/README.md`「從 8 支 timer 換成 tick」。
 - Caddy 擋掉外部存取 `/api/cron/*`；健康檢查 `/healthz`。
 - 部署步驟見 `deploy/README.md`（A～I）。
 - VPS 管理用 `root@139.162.95.207`（金鑰 `~/.ssh/id_ed25519` 有 passphrase；Windows ssh-agent 被停用，改用 Git Bash 的 ssh-agent + 彈窗輸入）。

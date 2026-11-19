@@ -414,6 +414,38 @@ paths:
         '200': { $ref: '#/components/responses/CronSummary' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /api/cron/tick:
+    get:
+      tags: [ops]
+      operationId: runSchedulerTick
+      summary: 排程派發器（每分鐘）：執行 scheduled_tasks 中到期且啟用的任務
+      x-implementation: route
+      x-feature: features/settings/管理排程任務.feature
+      security: [{ cronSecret: [] }]
+      responses:
+        '200': { description: '{ ok, scheduled, ran: [{ id, name, ok, message }] }' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /settings/scheduled-tasks:
+    post:
+      tags: [settings]
+      operationId: saveScheduledTask
+      summary: 新增或編輯排程任務（有 id 為編輯；系統任務只改名稱、時間、啟用）
+      x-implementation: server-action
+      x-feature: features/settings/管理排程任務.feature
+      responses:
+        '200': { description: 'ActionState；INVALID_ARGUMENT / NOT_FOUND' }
+
+  /settings/scheduled-tasks/{taskId}:
+    delete:
+      tags: [settings]
+      operationId: deleteScheduledTask
+      summary: 刪除自訂排程任務（系統任務回 SYSTEM_TASK_NOT_DELETABLE）
+      x-implementation: server-action
+      x-feature: features/settings/管理排程任務.feature
+      responses:
+        '200': { description: 'ActionState；NOT_FOUND / SYSTEM_TASK_NOT_DELETABLE' }
+
   /healthz:
     get:
       tags: [ops]
@@ -517,6 +549,7 @@ components:
         - HANDOVER_NOT_ALLOWED
         - NO_RENEWABLE_SERVICE
         - MIXED_CURRENCY
+        - SYSTEM_TASK_NOT_DELETABLE
 
     ActionOk:
       type: object

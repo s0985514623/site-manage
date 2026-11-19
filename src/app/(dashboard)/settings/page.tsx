@@ -33,6 +33,21 @@ import {
   uploadStampAction,
 } from '@/server/actions/settings'
 import { STAMP_KINDS, STAMP_LABEL, stampStatus } from '@/server/stamps'
+import {
+  deleteScheduledTaskAction,
+  runScheduledTaskNowAction,
+  saveScheduledTaskAction,
+} from '@/server/actions/scheduled-tasks'
+import { listScheduledTasks } from '@/server/ops/scheduled-tasks'
+import {
+  BUILTIN_JOB_LABEL,
+  SCHEDULED_TASK_KIND_LABEL,
+  describeSchedule,
+  formatRunTime,
+  type BuiltinJob,
+} from '@/lib/schedule'
+import type { ScheduledTask } from '@/db/schema'
+import { ScheduledTaskFields } from './scheduled-task-fields'
 
 export const metadata = { title: '設定' }
 export const dynamic = 'force-dynamic'
@@ -116,6 +131,108 @@ function PlanForm({ plan }: { plan?: Plan }) {
   )
 }
 
+function taskDetail(task: ScheduledTask): string {
+  if (task.kind === 'builtin') {
+    // 名稱可自訂；名稱跟原本的任務名不同時才補上原名，避免重複顯示
+    const label = BUILTIN_JOB_LABEL[task.job as BuiltinJob] ?? ''
+    return label && label !== task.name ? `${label}（${task.job}）` : (task.job ?? '')
+  }
+  if (task.kind === 'http_request') return `${task.method} ${task.url}`
+  return task.message ?? ''
+}
+
+function ScheduledTaskRow({ task }: { task: ScheduledTask }) {
+  return (
+    <tr className="align-top hover:bg-surface-muted">
+      <Td>
+        <span className="font-medium">{task.name}</span>
+        <span className="ml-2">
+          <Badge>{SCHEDULED_TASK_KIND_LABEL[task.kind]}</Badge>
+        </span>
+        {!task.enabled && (
+          <span className="ml-1">
+            <Badge>已停用</Badge>
+          </span>
+        )}
+        <div className="mt-0.5 max-w-xs truncate text-xs text-muted">{taskDetail(task)}</div>
+      </Td>
+      <Td className="whitespace-nowrap">{describeSchedule(task)}</Td>
+      <Td className="tabular whitespace-nowrap text-muted">
+        {task.enabled ? (task.nextRunAt ? formatRunTime(task.nextRunAt) : '一分鐘內排定') : '—'}
+      </Td>
+      <Td className="text-xs">
+        {task.lastRunAt ? (
+          <>
+            <span className={task.lastOk ? 'text-safe' : 'text-overdue'}>
+              {task.lastOk ? '成功' : '失敗'}
+            </span>{' '}
+            <span className="tabular text-muted">{formatRunTime(task.lastRunAt)}</span>
+            {!task.lastOk && task.lastMessage && (
+              <div className="mt-0.5 max-w-xs truncate text-overdue" title={task.lastMessage}>
+                {task.lastMessage}
+              </div>
+            )}
+          </>
+        ) : (
+          <span className="text-muted">尚未執行</span>
+        )}
+      </Td>
+      <Td align="right">
+        <details>
+          <summary className="cursor-pointer list-none text-sm text-accent hover:underline">
+            編輯
+          </summary>
+          <div className="mt-4 w-[36rem] max-w-full rounded-lg border border-border bg-surface-muted p-4 text-left">
+            <ActionForm action={saveScheduledTaskAction} submitLabel="儲存">
+              <ScheduledTaskFields
+                task={{
+                  id: task.id,
+                  name: task.name,
+                  kind: task.kind,
+                  job: task.job,
+                  message: task.message,
+                  url: task.url,
+                  method: task.method,
+                  frequency: task.frequency,
+                  intervalMinutes: task.intervalMinutes,
+                  timeOfDay: task.timeOfDay,
+                  weekday: task.weekday,
+                  dayOfMonth: task.dayOfMonth,
+                  enabled: task.enabled,
+                  system: task.system,
+                }}
+              />
+            </ActionForm>
+            <div className="mt-5 border-t border-border pt-5">
+              <ActionForm
+                action={runScheduledTaskNowAction}
+                submitLabel="立即執行一次"
+                submitVariant="secondary"
+                savedLabel="已執行"
+              >
+                <input type="hidden" name="id" value={task.id} />
+                <p className="text-xs text-muted">不影響下次排定時間；系統任務會真的寄出通知或報價提醒</p>
+              </ActionForm>
+            </div>
+            {!task.system && (
+              <div className="mt-5 border-t border-border pt-5">
+                <ConfirmForm
+                  action={deleteScheduledTaskAction}
+                  label="刪除這個排程"
+                  confirmLabel="確定刪除"
+                  message="刪除後不會再執行。"
+                >
+                  <input type="hidden" name="id" value={task.id} />
+                </ConfirmForm>
+              </div>
+            )}
+          </div>
+        </details>
+      </Td>
+    </tr>
+  )
+}
+
 const GCAL_MESSAGE: Record<string, { tone: 'ok' | 'error'; text: string }> = {
   ok: { tone: 'ok', text: 'Google Calendar 授權完成，專屬日曆已建立。' },
   denied: { tone: 'error', text: '授權未完成。' },
@@ -131,11 +248,12 @@ export default async function SettingsPage({
   const gcalDetail =
     typeof params.detail === 'string' ? params.detail : undefined
 
-  const [config, planRows, gcal, stampFiles] = await Promise.all([
+  const [config, planRows, gcal, stampFiles, tasks] = await Promise.all([
     getSettings(),
     db.query.plans.findMany({ orderBy: [asc(plans.sortOrder), asc(plans.name)] }),
     calendarStatus(),
     stampStatus(),
+    listScheduledTasks(),
   ])
 
   return (
@@ -455,6 +573,39 @@ export default async function SettingsPage({
         <div className="border-t border-border p-5">
           <Disclosure label="新增方案">
             <PlanForm />
+          </Disclosure>
+        </div>
+      </Card>
+
+      <Card
+        title="排程任務"
+        description="系統每分鐘檢查一次，到時間就執行。可以調整內建任務的時間，或新增 LINE 提醒、呼叫網址、替內建任務多加一個時段"
+      >
+        {tasks.length === 0 ? (
+          <EmptyState title="還沒有排程任務" />
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>任務</Th>
+                <Th>時間</Th>
+                <Th>下次執行</Th>
+                <Th>上次執行</Th>
+                <Th />
+              </tr>
+            </thead>
+            <tbody>
+              {tasks.map((task) => (
+                <ScheduledTaskRow key={task.id} task={task} />
+              ))}
+            </tbody>
+          </Table>
+        )}
+        <div className="border-t border-border p-5">
+          <Disclosure label="新增排程任務">
+            <ActionForm action={saveScheduledTaskAction} submitLabel="新增" resetOnSuccess>
+              <ScheduledTaskFields />
+            </ActionForm>
           </Disclosure>
         </div>
       </Card>
