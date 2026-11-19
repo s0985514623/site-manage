@@ -186,7 +186,10 @@ function ServiceForm({
             defaultValue={service?.costAmount ?? ''}
           />
         </Field>
-        <Field label="售價" hint="跟客戶收的金額，會直接帶入報價單">
+        <Field
+          label="售價"
+          hint="跟客戶收的金額，會直接帶入報價單。留空且有選方案範本時，自動帶入方案的售價"
+        >
           <Input
             name="priceAmount"
             type="number"
@@ -451,6 +454,12 @@ export default async function SiteDetailPage({
                         </summary>
                         <div className="mt-4 w-[32rem] max-w-full rounded-lg border border-border bg-surface-muted p-4 text-left">
                           <ServiceForm
+                            /**
+                             * 存檔後以新的 updatedAt 重新掛載。React 19 在 form action
+                             * 完成後會自動 reset 表單，而 <select> 的 defaultValue
+                             * 只在掛載時套用，不重掛就會跳回最初的選項（例如「不使用範本」）。
+                             */
+                            key={service.updatedAt.toISOString()}
                             siteId={site.id}
                             service={service}
                             planOptions={planOptions}

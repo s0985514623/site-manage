@@ -6,7 +6,7 @@ import { z } from 'zod'
 
 import { requireUser } from '@/auth'
 import { db } from '@/db'
-import { services } from '@/db/schema'
+import { plans, services } from '@/db/schema'
 import { logActivity } from '@/lib/activity'
 import { advanceByCycle, type BillingCycle } from '@/lib/dates'
 import { encrypt } from '@/lib/crypto'
@@ -108,6 +108,20 @@ export async function saveService(
     ? JSON.stringify(encrypt(authCodeInput))
     : undefined
 
+  /**
+   * 售價留空但選了方案範本 → 帶入方案的預設售價。
+   * 落地成服務項目自己的售價，報價單、到期掃描、日曆等所有讀 priceAmount
+   * 的地方就不必各自再回退一次。之後改方案價不會回頭改已存的項目。
+   */
+  let priceAmount = money(d.priceAmount)
+  if (priceAmount === null && d.planId) {
+    const plan = await db.query.plans.findFirst({
+      where: eq(plans.id, d.planId),
+      columns: { priceAmount: true },
+    })
+    priceAmount = plan?.priceAmount ?? null
+  }
+
   const values = {
     siteId: d.siteId,
     type: d.type,
@@ -120,7 +134,7 @@ export async function saveService(
     billingCycle: d.billingCycle,
     autoRenew: d.autoRenew,
     costAmount: money(d.costAmount),
-    priceAmount: money(d.priceAmount),
+    priceAmount,
     currency: d.currency,
     detectHost: d.detectHost || null,
     planId: d.planId || null,
