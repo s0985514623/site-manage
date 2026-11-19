@@ -70,7 +70,17 @@ function ServiceForm({
       <input type="hidden" name="siteId" value={siteId} />
       {service && <input type="hidden" name="id" value={service.id} />}
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      {/*
+        存檔後以新的 updatedAt 重新掛載欄位。React 19 在 form action 完成後
+        會自動 reset 表單，而 <select> 的 defaultValue 只在掛載時套用，
+        不重掛就會跳回最初的選項（例如「不使用範本」）。
+        key 只放在欄位區塊，不放在 ActionForm 上 —— 否則連 useActionState
+        一起重建，「已儲存」提示會消失。
+      */}
+      <div
+        key={service?.updatedAt.toISOString()}
+        className="grid gap-4 sm:grid-cols-2"
+      >
         <Field label="類型" required>
           <Select name="type" defaultValue={service?.type ?? 'domain'}>
             {Object.entries(SERVICE_TYPE_LABEL).map(([v, l]) => (
@@ -454,12 +464,6 @@ export default async function SiteDetailPage({
                         </summary>
                         <div className="mt-4 w-[32rem] max-w-full rounded-lg border border-border bg-surface-muted p-4 text-left">
                           <ServiceForm
-                            /**
-                             * 存檔後以新的 updatedAt 重新掛載。React 19 在 form action
-                             * 完成後會自動 reset 表單，而 <select> 的 defaultValue
-                             * 只在掛載時套用，不重掛就會跳回最初的選項（例如「不使用範本」）。
-                             */
-                            key={service.updatedAt.toISOString()}
                             siteId={site.id}
                             service={service}
                             planOptions={planOptions}
