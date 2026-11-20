@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { db } from '@/db'
+import { cancelQuote } from '@/server/send-quote'
 
 import { fakeNet } from '../../fakes/network'
 import { 排程執行 } from '../../support/cron'
@@ -96,6 +97,22 @@ describe('排程擬定續約報價草稿', () => {
     const quotes = await 網站的報價單('小森咖啡官網')
     expect(quotes).toHaveLength(1)
     expect(quotes[0].status).toBe('draft')
+  })
+
+  it('同一期間已取消的報價單不會被排程重開', async () => {
+    await 系統設定為({ autoSend: false, lineAdmin: true })
+    await 排程執行('quote-draft')
+    const [first] = await 網站的報價單('小森咖啡官網')
+    await cancelQuote(first.id, 'owner@example.com')
+
+    const result = await 排程執行('quote-draft')
+
+    const quotes = await 網站的報價單('小森咖啡官網')
+    expect(quotes).toHaveLength(1)
+    expect(quotes[0].status).toBe('cancelled')
+    expect(result.body.skipped).toContainEqual(
+      expect.objectContaining({ reason: 'cancelled', detail: 'morimori.com.tw' }),
+    )
   })
 
   it('乾跑不寫入、不推播、不送心跳', async () => {
