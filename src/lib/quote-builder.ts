@@ -1,6 +1,6 @@
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from 'drizzle-orm'
 
-import { db } from "@/db";
+import { db } from '@/db'
 import {
   plans,
   quoteItems,
@@ -9,7 +9,7 @@ import {
   sites,
   type Service,
   type Settings,
-} from "@/db/schema";
+} from '@/db/schema'
 import {
   CYCLE_UNIT,
   advanceByCycle,
@@ -21,11 +21,11 @@ import {
   today,
   type BillingCycle,
   type DateStr,
-} from "./dates";
-import { SERVICE_TYPE_LABEL } from "./labels";
-import { computeTotals, lineAmountCents, toCents, type TaxMode } from "./money";
-import { nextQuoteNo } from "./quote-no";
-import { getSettings } from "./settings";
+} from './dates'
+import { SERVICE_TYPE_LABEL } from './labels'
+import { computeTotals, lineAmountCents, toCents, type TaxMode } from './money'
+import { nextQuoteNo } from './quote-no'
+import { getSettings } from './settings'
 
 /**
  * 合併報價的分組與計算。
@@ -49,41 +49,36 @@ import { getSettings } from "./settings";
  */
 
 export type SkipReason =
-  | "not_due" // 錨點還沒到觸發天數
-  | "no_price" // 代管項目沒設售價，開出去會是零元報價
-  | "zero_total" // 全部項目都是 0 元，沒有東西可收費
-  | "mixed_currency" // 同一張單混了不同幣別，金額無法直接相加
-  | "no_candidate" // 沒有尚未被涵蓋的代管項目（只有手動開立會用到）
-  | "cancelled"; // 同一期間的報價單已被取消或逾期過，排程不再自動重開
+  | 'not_due' // 錨點還沒到觸發天數
+  | 'no_price' // 代管項目沒設售價，開出去會是零元報價
+  | 'zero_total' // 全部項目都是 0 元，沒有東西可收費
+  | 'mixed_currency' // 同一張單混了不同幣別，金額無法直接相加
+  | 'no_candidate' // 沒有尚未被涵蓋的代管項目（只有手動開立會用到）
+  | 'cancelled' // 同一期間的報價單已被取消或逾期過，排程不再自動重開
 
 export type QuoteGroup = {
-  siteId: string;
-  siteName: string;
-  clientId: string;
-  clientName: string;
-  clientShortName: string | null;
-  anchor: Service;
-  anchorDate: DateStr;
-  anchorDays: number;
+  siteId: string
+  siteName: string
+  clientId: string
+  clientName: string
+  clientShortName: string | null
+  anchor: Service
+  anchorDate: DateStr
+  anchorDays: number
   /** 會開進報價單的項目（含錨點） */
-  items: Service[];
+  items: Service[]
   /** 因為沒設售價而被排除的項目 */
-  excludedNoPrice: Service[];
-  currency: string;
-};
+  excludedNoPrice: Service[]
+  currency: string
+}
 
 export type GroupScan = {
-  scannedAt: DateStr;
-  triggerDays: number;
-  windowDays: number;
-  groups: QuoteGroup[];
-  skipped: {
-    siteId: string;
-    siteName: string;
-    reason: SkipReason;
-    detail?: string;
-  }[];
-};
+  scannedAt: DateStr
+  triggerDays: number
+  windowDays: number
+  groups: QuoteGroup[]
+  skipped: { siteId: string; siteName: string; reason: SkipReason; detail?: string }[]
+}
 
 /**
  * 找出今天該擬報價草稿的網站。
@@ -94,8 +89,8 @@ export type GroupScan = {
 export async function collectQuoteGroups(
   config?: Settings,
 ): Promise<GroupScan> {
-  const settings = config ?? (await getSettings());
-  const scannedAt = today();
+  const settings = config ?? (await getSettings())
+  const scannedAt = today()
 
   const rows = await db
     .select({
@@ -109,84 +104,78 @@ export async function collectQuoteGroups(
     .where(
       and(
         eq(services.isOurs, true),
-        eq(services.status, "active"),
-        eq(services.renewalState, "upcoming"),
+        eq(services.status, 'active'),
+        eq(services.renewalState, 'upcoming'),
         isNull(services.currentQuoteId),
       ),
     )
-    .orderBy(asc(services.expiresAt));
+    .orderBy(asc(services.expiresAt))
 
   // 客戶名稱另外查，避免在上面的查詢再多 join 一層
-  const clientNames = new Map<
-    string,
-    { name: string; shortName: string | null }
-  >();
-  const siteList = await db.query.sites.findMany({ with: { client: true } });
+  const clientNames = new Map<string, { name: string; shortName: string | null }>()
+  const siteList = await db.query.sites.findMany({ with: { client: true } })
   for (const s of siteList)
     clientNames.set(s.id, {
       name: s.client.name,
       shortName: s.client.shortName,
-    });
+    })
 
   /**
    * 同一期間已被取消或逾期過的項目不再自動開單。
    *
-   * 取消（或逾期釋放）報價單會把項目放回 upcoming，若不排除，隔天排程又會替
-   * 同一期間開一張新單，取消等於白按。以「該項目這一期的起日」比對：
+   * 取消（或逾期釋放）報價單會把項目放回 upcoming，若不排除，隔天排程
+   * 又會替同一期間開一張新單，取消等於白按。以「該項目這一期的起日」比對：
    * 項目續約後到期日往後推，起日不同，下一期就會恢復自動開單。
    * 手動開立不受此限 —— 管理者按按鈕就代表要重開。
    */
-  const cancelled = await cancelledPeriods(rows.map((r) => r.service.id));
-  const skipped: GroupScan["skipped"] = [];
-  const cancelledBySite = new Map<
-    string,
-    { siteName: string; ids: string[] }
-  >();
+  const cancelled = await cancelledPeriods(rows.map((r) => r.service.id))
+  const skipped: GroupScan['skipped'] = []
+  const cancelledBySite = new Map<string, { siteName: string; ids: string[] }>()
   const eligible = rows.filter((row) => {
-    const key = `${row.service.id}|${renewalPeriodStart(row.service.expiresAt)}`;
-    if (!cancelled.has(key)) return true;
+    const key = `${row.service.id}|${renewalPeriodStart(row.service.expiresAt)}`
+    if (!cancelled.has(key)) return true
     const entry = cancelledBySite.get(row.siteId) ?? {
       siteName: row.siteName,
       ids: [],
-    };
-    entry.ids.push(row.service.identifier);
-    cancelledBySite.set(row.siteId, entry);
-    return false;
-  });
+    }
+    entry.ids.push(row.service.identifier)
+    cancelledBySite.set(row.siteId, entry)
+    return false
+  })
   for (const [siteId, entry] of cancelledBySite) {
     skipped.push({
       siteId,
       siteName: entry.siteName,
-      reason: "cancelled",
-      detail: entry.ids.join("、"),
-    });
+      reason: 'cancelled',
+      detail: entry.ids.join('、'),
+    })
   }
 
-  const bySite = new Map<string, typeof rows>();
+  const bySite = new Map<string, typeof rows>()
   for (const row of eligible) {
-    const list = bySite.get(row.siteId) ?? [];
-    list.push(row);
-    bySite.set(row.siteId, list);
+    const list = bySite.get(row.siteId) ?? []
+    list.push(row)
+    bySite.set(row.siteId, list)
   }
 
-  const groups: QuoteGroup[] = [];
+  const groups: QuoteGroup[] = []
 
   for (const [siteId, list] of bySite) {
-    const client = clientNames.get(siteId);
+    const client = clientNames.get(siteId)
     const result = groupForSite(
       {
         siteId,
         siteName: list[0].siteName,
         clientId: list[0].clientId,
-        clientName: client?.name ?? "",
+        clientName: client?.name ?? '',
         clientShortName: client?.shortName ?? null,
         services: list.map((r) => r.service),
       },
       settings,
       scannedAt,
-    );
-    if ("reason" in result) skipped.push(result);
-    else groups.push(result);
+    )
+    if ('reason' in result) skipped.push(result)
+    else groups.push(result)
   }
 
   return {
@@ -195,14 +184,15 @@ export async function collectQuoteGroups(
     windowDays: settings.quoteWindowDays,
     groups,
     skipped,
-  };
+  }
 }
 
 /**
- * 回傳「服務項目 id|期間起日」集合：這些項目在該期間曾出現在已取消或已逾期的報價單上。
+ * 回傳「服務項目 id|期間起日」集合：這些項目在該期間曾出現在
+ * 已取消或已逾期的報價單上。
  */
 async function cancelledPeriods(serviceIds: string[]): Promise<Set<string>> {
-  if (serviceIds.length === 0) return new Set();
+  if (serviceIds.length === 0) return new Set()
   const rows = await db
     .select({
       serviceId: quoteItems.serviceId,
@@ -212,24 +202,24 @@ async function cancelledPeriods(serviceIds: string[]): Promise<Set<string>> {
     .innerJoin(quotes, eq(quoteItems.quoteId, quotes.id))
     .where(
       and(
-        inArray(quotes.status, ["cancelled", "expired"]),
+        inArray(quotes.status, ['cancelled', 'expired']),
         inArray(quoteItems.serviceId, serviceIds),
       ),
-    );
-  return new Set(rows.map((r) => `${r.serviceId}|${r.periodStart}`));
+    )
+  return new Set(rows.map((r) => `${r.serviceId}|${r.periodStart}`))
 }
 
 type SiteCandidates = {
-  siteId: string;
-  siteName: string;
-  clientId: string;
-  clientName: string;
-  clientShortName: string | null;
+  siteId: string
+  siteName: string
+  clientId: string
+  clientName: string
+  clientShortName: string | null
   /** 該網站尚未被報價單涵蓋的代管項目，需依 expiresAt 由早到晚排序 */
-  services: Service[];
-};
+  services: Service[]
+}
 
-type Skip = GroupScan["skipped"][number];
+type Skip = GroupScan['skipped'][number]
 
 /**
  * 單一網站的分組規則（排程與手動開立共用）。
@@ -243,43 +233,43 @@ export function groupForSite(
   scannedAt: DateStr,
   opts: { ignoreTrigger?: boolean } = {},
 ): QuoteGroup | Skip {
-  const { siteId, siteName } = site;
+  const { siteId, siteName } = site
   // services 已依 expiresAt 排序，所以第一筆就是錨點
-  const anchor = site.services[0];
-  const anchorDate = anchor.expiresAt;
-  const anchorDays = daysUntil(anchorDate, scannedAt);
+  const anchor = site.services[0]
+  const anchorDate = anchor.expiresAt
+  const anchorDays = daysUntil(anchorDate, scannedAt)
 
   if (!opts.ignoreTrigger && anchorDays > settings.quoteTriggerDays) {
-    return { siteId, siteName, reason: "not_due" };
+    return { siteId, siteName, reason: 'not_due' }
   }
 
-  const windowEnd = plusDays(anchorDate, settings.quoteWindowDays);
-  const inWindow = site.services.filter((s) => s.expiresAt <= windowEnd);
+  const windowEnd = plusDays(anchorDate, settings.quoteWindowDays)
+  const inWindow = site.services.filter((s) => s.expiresAt <= windowEnd)
 
-  const withPrice = inWindow.filter((s) => s.priceAmount !== null);
-  const excludedNoPrice = inWindow.filter((s) => s.priceAmount === null);
+  const withPrice = inWindow.filter((s) => s.priceAmount !== null)
+  const excludedNoPrice = inWindow.filter((s) => s.priceAmount === null)
 
   if (withPrice.length === 0) {
     return {
       siteId,
       siteName,
-      reason: "no_price",
-      detail: inWindow.map((s) => s.identifier).join("、"),
-    };
+      reason: 'no_price',
+      detail: inWindow.map((s) => s.identifier).join('、'),
+    }
   }
 
   /**
    * 混幣別直接跳過而不是硬加。把 USD 的主機費和 TWD 的網域費相加
    * 會得到一個毫無意義的數字，而那個數字會被寄到客戶信箱。
    */
-  const currencies = new Set(withPrice.map((s) => s.currency));
+  const currencies = new Set(withPrice.map((s) => s.currency))
   if (currencies.size > 1) {
     return {
       siteId,
       siteName,
-      reason: "mixed_currency",
-      detail: [...currencies].join(" / "),
-    };
+      reason: 'mixed_currency',
+      detail: [...currencies].join(' / '),
+    }
   }
 
   /**
@@ -289,17 +279,14 @@ export function groupForSite(
    * 列在報價單上讓客戶看見價值），但整張單總額為 0 就沒有意義，
    * 寄出去只會讓客戶困惑「這是要我付什麼」。
    */
-  const totalCents = withPrice.reduce(
-    (sum, s) => sum + toCents(s.priceAmount),
-    0,
-  );
+  const totalCents = withPrice.reduce((sum, s) => sum + toCents(s.priceAmount), 0)
   if (totalCents === 0) {
     return {
       siteId,
       siteName,
-      reason: "zero_total",
-      detail: withPrice.map((s) => s.identifier).join("、"),
-    };
+      reason: 'zero_total',
+      detail: withPrice.map((s) => s.identifier).join('、'),
+    }
   }
 
   return {
@@ -314,7 +301,7 @@ export function groupForSite(
     items: withPrice,
     excludedNoPrice,
     currency: withPrice[0].currency,
-  };
+  }
 }
 
 /**
@@ -325,12 +312,12 @@ export async function collectQuoteGroupForSite(
   siteId: string,
   config?: Settings,
 ): Promise<QuoteGroup | Skip | null> {
-  const settings = config ?? (await getSettings());
+  const settings = config ?? (await getSettings())
   const site = await db.query.sites.findFirst({
     where: eq(sites.id, siteId),
     with: { client: true },
-  });
-  if (!site) return null;
+  })
+  if (!site) return null
 
   const list = await db
     .select()
@@ -339,15 +326,15 @@ export async function collectQuoteGroupForSite(
       and(
         eq(services.siteId, siteId),
         eq(services.isOurs, true),
-        eq(services.status, "active"),
-        eq(services.renewalState, "upcoming"),
+        eq(services.status, 'active'),
+        eq(services.renewalState, 'upcoming'),
         isNull(services.currentQuoteId),
       ),
     )
-    .orderBy(asc(services.expiresAt));
+    .orderBy(asc(services.expiresAt))
 
   if (list.length === 0) {
-    return { siteId, siteName: site.name, reason: "no_candidate" };
+    return { siteId, siteName: site.name, reason: 'no_candidate' }
   }
 
   return groupForSite(
@@ -362,7 +349,7 @@ export async function collectQuoteGroupForSite(
     settings,
     today(),
     { ignoreTrigger: true },
-  );
+  )
 }
 
 /* ------------------------------------------------------------------ */
@@ -370,16 +357,16 @@ export async function collectQuoteGroupForSite(
 /* ------------------------------------------------------------------ */
 
 export type DraftItem = {
-  serviceId: string;
-  description: string;
-  specNote: string | null;
-  periodStart: DateStr;
-  periodEnd: DateStr;
-  unit: string;
-  unitPrice: string;
-  amount: string;
-  sortOrder: number;
-};
+  serviceId: string
+  description: string
+  specNote: string | null
+  periodStart: DateStr
+  periodEnd: DateStr
+  unit: string
+  unitPrice: string
+  amount: string
+  sortOrder: number
+}
 
 /**
  * 把服務項目轉成報價明細。
@@ -395,16 +382,16 @@ export function buildItems(
   specByPlanId: Map<string, string> = new Map(),
 ): DraftItem[] {
   return items.map((service, index) => {
-    const cycle = service.billingCycle as BillingCycle;
-    const periodStart = renewalPeriodStart(service.expiresAt);
-    const periodEnd = advanceByCycle(service.expiresAt, cycle);
-    const price = service.priceAmount ?? "0";
+    const cycle = service.billingCycle as BillingCycle
+    const periodStart = renewalPeriodStart(service.expiresAt)
+    const periodEnd = advanceByCycle(service.expiresAt, cycle)
+    const price = service.priceAmount ?? '0'
 
     const specNote =
       service.specNote ??
-      (service.planId ? (specByPlanId.get(service.planId) ?? null) : null);
+      (service.planId ? (specByPlanId.get(service.planId) ?? null) : null)
 
-    const period = `${SERVICE_TYPE_LABEL[service.type]}使用期間為 ${formatPeriod(periodStart, periodEnd)}`;
+    const period = `${SERVICE_TYPE_LABEL[service.type]}使用期間為 ${formatPeriod(periodStart, periodEnd)}`
 
     /**
      * 名稱欄：項目名稱 + 類型 + 續約。
@@ -412,9 +399,9 @@ export function buildItems(
      * 但項目名稱本身若已經寫了「續約」（例如登記成「虛擬主機續約」），
      * 再接一次就會變成「虛擬主機續約 主機續約」，所以直接沿用原名。
      */
-    const description = service.identifier.includes("續約")
+    const description = service.identifier.includes('續約')
       ? service.identifier
-      : `${service.identifier} ${SERVICE_TYPE_LABEL[service.type]}續約`;
+      : `${service.identifier} ${SERVICE_TYPE_LABEL[service.type]}續約`
 
     return {
       serviceId: service.id,
@@ -426,16 +413,14 @@ export function buildItems(
       unitPrice: Number(price).toFixed(2),
       amount: (lineAmountCents(price, 1) / 100).toFixed(2),
       sortOrder: index,
-    };
-  });
+    }
+  })
 }
 
 /** 取出所有方案範本的規格說明，供 buildItems 回退使用 */
 export async function loadPlanSpecs(): Promise<Map<string, string>> {
-  const rows = await db
-    .select({ id: plans.id, specNote: plans.specNote })
-    .from(plans);
-  return new Map(rows.map((r) => [r.id, r.specNote]));
+  const rows = await db.select({ id: plans.id, specNote: plans.specNote }).from(plans)
+  return new Map(rows.map((r) => [r.id, r.specNote]))
 }
 
 /**
@@ -454,9 +439,9 @@ export function computeValidUntil(
   validDays: number,
   from: DateStr = today(),
 ): DateStr {
-  const byDays = plusDays(from, validDays);
-  if (anchorDate <= from) return byDays;
-  return byDays < anchorDate ? byDays : anchorDate;
+  const byDays = plusDays(from, validDays)
+  if (anchorDate <= from) return byDays
+  return byDays < anchorDate ? byDays : anchorDate
 }
 
 /* ------------------------------------------------------------------ */
@@ -466,21 +451,21 @@ export function computeValidUntil(
 /** 項目在開單途中已被別張報價單涵蓋 */
 export class QuoteConflictError extends Error {
   constructor(identifier: string) {
-    super(`${identifier} 已被其他報價單涵蓋`);
-    this.name = "QuoteConflictError";
+    super(`${identifier} 已被其他報價單涵蓋`)
+    this.name = 'QuoteConflictError'
   }
 }
 
 export type CreatedQuote = {
-  id: string;
-  quoteNo: string;
-  siteId: string;
-  siteName: string;
-  clientName: string;
-  total: string;
-  currency: string;
-  itemCount: number;
-};
+  id: string
+  quoteNo: string
+  siteId: string
+  siteName: string
+  clientName: string
+  total: string
+  currency: string
+  itemCount: number
+}
 
 /**
  * 建立一張合併報價單。
@@ -495,13 +480,13 @@ export async function createQuoteForGroup(
   config: Settings,
   planSpecs?: Map<string, string>,
 ): Promise<CreatedQuote> {
-  const issueDate = today();
-  const items = buildItems(group.items, planSpecs ?? (await loadPlanSpecs()));
+  const issueDate = today()
+  const items = buildItems(group.items, planSpecs ?? (await loadPlanSpecs()))
   const totals = computeTotals(
     items.map((i) => toCents(i.amount)),
     config.defaultTaxMode as TaxMode,
     config.defaultTaxRate,
-  );
+  )
 
   /**
    * 匯款期限以「錨點到期日」為準，而不是報價單有效期限：
@@ -509,11 +494,11 @@ export async function createQuoteForGroup(
    */
   const paymentNote = (
     config.quotePaymentNote ??
-    "請於到期日{date}前完成匯款，以避免網域或主機遭服務商釋出影響使用權利"
-  ).replace("{date}", formatTw(group.anchorDate));
+    '請於到期日{date}前完成匯款，以避免網域或主機遭服務商釋出影響使用權利'
+  ).replace('{date}', formatTw(group.anchorDate))
 
   return db.transaction(async (tx) => {
-    const quoteNo = await nextQuoteNo(tx, issueDate);
+    const quoteNo = await nextQuoteNo(tx, issueDate)
 
     const [quote] = await tx
       .insert(quotes)
@@ -521,15 +506,13 @@ export async function createQuoteForGroup(
         quoteNo,
         // 只用網站名稱：網站名稱通常已含客戶名，再接客戶名會重複
         projectName: `${group.siteName}續約`,
-        deliveryMethod: [
-          ...new Set(group.items.map((s) => SERVICE_TYPE_LABEL[s.type])),
-        ]
-          .join("、")
-          .concat("續約"),
+        deliveryMethod: [...new Set(group.items.map((s) => SERVICE_TYPE_LABEL[s.type]))]
+          .join('、')
+          .concat('續約'),
         paymentNote,
         clientId: group.clientId,
         siteId: group.siteId,
-        status: "draft",
+        status: 'draft',
         anchorServiceId: group.anchor.id,
         anchorDate: group.anchorDate,
         issueDate,
@@ -546,7 +529,7 @@ export async function createQuoteForGroup(
         total: totals.total,
         terms: config.quoteTerms,
       })
-      .returning();
+      .returning()
 
     await tx.insert(quoteItems).values(
       items.map((i) => ({
@@ -556,13 +539,13 @@ export async function createQuoteForGroup(
         specNote: i.specNote,
         periodStart: i.periodStart,
         periodEnd: i.periodEnd,
-        quantity: "1",
+        quantity: '1',
         unit: i.unit,
         unitPrice: i.unitPrice,
         amount: i.amount,
         sortOrder: i.sortOrder,
       })),
-    );
+    )
 
     for (const service of group.items) {
       /**
@@ -573,15 +556,12 @@ export async function createQuoteForGroup(
         .update(services)
         .set({
           currentQuoteId: quote.id,
-          renewalState: "drafted",
+          renewalState: 'drafted',
           updatedAt: new Date(),
         })
-        .where(
-          and(eq(services.id, service.id), isNull(services.currentQuoteId)),
-        )
-        .returning({ id: services.id });
-      if (claimed.length === 0)
-        throw new QuoteConflictError(service.identifier);
+        .where(and(eq(services.id, service.id), isNull(services.currentQuoteId)))
+        .returning({ id: services.id })
+      if (claimed.length === 0) throw new QuoteConflictError(service.identifier)
     }
 
     return {
@@ -593,8 +573,8 @@ export async function createQuoteForGroup(
       total: totals.total,
       currency: group.currency,
       itemCount: items.length,
-    };
-  });
+    }
+  })
 }
 
 /**
@@ -607,8 +587,8 @@ export async function releaseServices(quoteId: string): Promise<void> {
     .update(services)
     .set({
       currentQuoteId: null,
-      renewalState: "upcoming",
+      renewalState: 'upcoming',
       updatedAt: new Date(),
     })
-    .where(eq(services.currentQuoteId, quoteId));
+    .where(eq(services.currentQuoteId, quoteId))
 }
