@@ -2,7 +2,7 @@
 
 > 給下一次對話（人或 AI）快速接手用。每條決策都寫「決定了什麼」＋「為什麼／怎麼套用」。
 > 細節規格看 `specs/`，實作計畫看 `plans/site-ops-expansion/`，澄清問答原文看 `specs/clarify/2026-11-16-1046.md`。
-> 最後更新：2026-11-19
+> 最後更新：2026-11-24
 
 ---
 
@@ -55,6 +55,19 @@
   - 失敗：`NOT_FOUND`、`NO_RENEWABLE_SERVICE`（沒項目／沒售價／合計 0／已被涵蓋）、`MIXED_CURRENCY`。
   - `createQuoteForGroup` 認領服務改為條件式（`current_quote_id IS NULL`），連點或與排程同時跑不會開出重複報價單。
 - 防漏四件套全做：報價追蹤（`quote_followup_days`）、收款追蹤（`paid_on`/`paid_amount`）、排程掛掉告警、每週週報。
+
+### 近況（2026-11-24 追加）
+- 專案頁與網站頁各有「近況」對話串：每則文字＋最多 10 張圖片（合計 10MB），依時間由舊到新、最新在最下面。
+- 圖片只收 JPG／PNG／WebP（瀏覽器能直接顯示）；送出前在瀏覽器把大圖縮到長邊 1920px 的 JPEG。可貼上、拖曳圖片，Ctrl+Enter 送出。
+- 存資料庫（`updates`、`update_images`，bytea），隨資料庫備份；圖片走 `/api/update-images/[id]`，需登入。
+- 只能新增與刪除，不做編輯。刪除專案或網站時近況一併刪除。
+
+### 上傳報價單（2026-11-24 追加）
+- 專案頁「報價」卡片、網站頁「報價單」卡片可上傳自己做好的 PDF，建成正式報價單（`quotes.source = 'uploaded'`，檔案在 `quote_files`）。
+- 沒有明細，只記合計（`tax_mode = none`、subtotal = total）。單號留空自動編號，自填重複回 `QUOTE_NO_TAKEN`；有效期限留空依 `quote_valid_days`。
+- 「檢視 PDF」與寄信附件都用上傳的原檔（`renderQuotePdf` 開頭分流）。
+- 可勾「我已經自己寄給客戶」→ 直接 `sent`＋`sent_at`，進入追蹤未回覆；不勾則是草稿，走原本寄送流程。
+- 上傳的報價單不涵蓋服務項目，報價單頁不顯示「標記已續約」。
 
 ### 專案
 - 類別固定四種：`new_site`（新網站製作）、`custom_plugin`（客製外掛）、`bug_fix`（BUG 排除）、`other`。

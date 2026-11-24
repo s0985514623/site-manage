@@ -12,6 +12,7 @@ import { advanceByCycle, type BillingCycle } from '@/lib/dates'
 import { checkUploadFile, type CheckedFile } from '@/lib/upload-file'
 import { registerPayment } from '@/server/quotes/payment'
 import { createRenewalQuote } from '@/server/quotes/renewal'
+import { uploadQuote } from '@/server/quotes/upload'
 import { cancelQuote, sendQuoteToClient } from '@/server/send-quote'
 import { type ActionState } from './helpers'
 
@@ -218,4 +219,36 @@ export async function registerPaymentAction(
     revalidatePath('/quotes')
   }
   return result
+}
+
+/** 上傳外部做好的報價單 PDF（專案頁、網站頁）。成功後跳到報價單頁 */
+export async function uploadQuoteAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const email = await requireUser()
+  const file = formData.get('file')
+  const projectId = read(formData, 'projectId')
+  const siteId = read(formData, 'siteId')
+
+  const result = await uploadQuote(
+    {
+      projectId,
+      siteId,
+      file: file instanceof File ? file : new File([], ''),
+      quoteNo: read(formData, 'quoteNo'),
+      title: read(formData, 'title'),
+      issueDate: read(formData, 'issueDate'),
+      validUntil: read(formData, 'validUntil'),
+      total: read(formData, 'total'),
+      alreadySent: formData.get('alreadySent') === 'on',
+    },
+    email,
+  )
+  if (!result.ok) return { error: result.error, violationType: result.violationType }
+
+  revalidatePath('/quotes')
+  if (projectId) revalidatePath(`/projects/${projectId}`)
+  if (siteId) revalidatePath(`/sites/${siteId}`)
+  redirect(`/quotes/${result.quoteId}`)
 }

@@ -15,6 +15,7 @@ import {
   Td,
   Th,
 } from '@/components/ui'
+import { UpdateThread } from '@/components/update-thread'
 import { db } from '@/db'
 import { projects, quotes } from '@/db/schema'
 import { formatTw, today } from '@/lib/dates'
@@ -154,6 +155,8 @@ export default async function ProjectDetailPage({ params }: PageProps<'/projects
         </div>
       </Card>
 
+      <UpdateThread target={{ projectId: project.id }} />
+
       <Card
         title="時程與里程碑"
         description="可以自由新增多段時程（例：前端開發 11/20–12/10），每段都會以跨日事件寫入 Google「專案管理」日曆；只填結束日就是單日里程碑"
@@ -257,6 +260,7 @@ export default async function ProjectDetailPage({ params }: PageProps<'/projects
             <thead>
               <tr>
                 <Th>單號</Th>
+                <Th>來源</Th>
                 <Th>開立</Th>
                 <Th align="right">合計</Th>
                 <Th>狀態</Th>
@@ -270,6 +274,7 @@ export default async function ProjectDetailPage({ params }: PageProps<'/projects
                       {q.quoteNo}
                     </Link>
                   </Td>
+                  <Td className="text-muted">{q.source === 'uploaded' ? '上傳' : '系統產生'}</Td>
                   <Td className="tabular text-muted">{formatTw(q.issueDate)}</Td>
                   <Td align="right" className="tabular">
                     {formatMoney(q.total, q.currency)}

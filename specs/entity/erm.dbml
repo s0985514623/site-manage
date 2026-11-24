@@ -31,6 +31,8 @@ Enum quote_status { draft pending_approval sent accepted rejected cancelled expi
 
 Enum tax_mode { exclusive inclusive none }
 
+Enum quote_source { generated uploaded }
+
 Enum attachment_kind { signed_quote payment_proof other }
 
 Enum notify_channel { email line }
@@ -124,6 +126,7 @@ Table quotes {
   site_id       uuid          [note: '[MODIFIED] 改為可空：專案報價可不綁網站']
   project_id    uuid          [note: '[NEW] 由專案產生的報價單才有值']
   status        quote_status  [not null, default: 'draft']
+  source        quote_source  [not null, default: 'generated', note: '[NEW] uploaded = 管理者上傳的 PDF，沒有明細']
   anchor_service_id uuid
   anchor_date   date          [note: '[MODIFIED] 改為可空：專案報價沒有到期錨點']
   issue_date    date          [not null]
@@ -173,6 +176,39 @@ Table quote_attachments {
   kind      attachment_kind [not null]
   filename  text            [not null]
   Note: '附件（不變）。登記收款的匯款證明以 kind = payment_proof 上傳'
+}
+
+Table quote_files {
+  quote_id     uuid        [pk, note: '[NEW] 一張上傳報價單一個檔案']
+  filename     text        [not null]
+  content_type text        [not null, note: '只收 application/pdf']
+  size_bytes   integer     [not null]
+  data         bytea       [not null]
+  uploaded_by  text        [not null]
+  created_at   timestamptz [not null]
+  Note: '上傳報價單的 PDF 本體。檢視 PDF 與寄信附件都用這個檔案'
+}
+
+Table updates {
+  id         uuid        [pk]
+  project_id uuid
+  site_id    uuid
+  body       text        [not null, default: '']
+  created_by text        [not null]
+  created_at timestamptz [not null]
+  Note: '[NEW] 近況（對話串）。project_id 與 site_id 恰好一個有值（CHECK）'
+}
+
+Table update_images {
+  id           uuid        [pk]
+  update_id    uuid        [not null]
+  filename     text        [not null]
+  content_type text        [not null, note: 'image/jpeg | image/png | image/webp']
+  size_bytes   integer     [not null]
+  data         bytea       [not null]
+  sort_order   integer     [not null, default: 0]
+  created_at   timestamptz [not null]
+  Note: '[NEW] 近況圖片，一則最多 10 張、合計 10MB'
 }
 
 Table approvals {
@@ -330,3 +366,7 @@ Ref: notifications.quote_id > quotes.id [delete: cascade]            // [NEW]
 Ref: projects.client_id > clients.id [delete: restrict]              // [NEW]
 Ref: projects.site_id > sites.id [delete: set null]                  // [NEW]
 Ref: project_milestones.project_id > projects.id [delete: cascade]   // [NEW]
+Ref: quote_files.quote_id - quotes.id [delete: cascade]              // [NEW]
+Ref: updates.project_id > projects.id [delete: cascade]              // [NEW]
+Ref: updates.site_id > sites.id [delete: cascade]                    // [NEW]
+Ref: update_images.update_id > updates.id [delete: cascade]          // [NEW]

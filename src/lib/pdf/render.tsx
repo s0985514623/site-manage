@@ -2,7 +2,7 @@ import { renderToBuffer } from '@react-pdf/renderer'
 import { asc, desc, eq } from 'drizzle-orm'
 
 import { db } from '@/db'
-import { contacts, quoteItems, quotes } from '@/db/schema'
+import { contacts, quoteFiles, quoteItems, quotes } from '@/db/schema'
 import { quoteSubjectName } from '../quote-display'
 import { stampsForPdf } from '@/server/stamps'
 import { getSettings } from '../settings'
@@ -28,6 +28,13 @@ export async function renderQuotePdf(quoteId: string): Promise<{
     },
   })
   if (!quote) throw new Error(`找不到報價單 ${quoteId}`)
+
+  // 上傳的報價單：檢視與寄信都用原檔，不重新排版
+  if (quote.source === 'uploaded') {
+    const file = await db.query.quoteFiles.findFirst({ where: eq(quoteFiles.quoteId, quoteId) })
+    if (!file) throw new Error(`報價單 ${quote.quoteNo} 的上傳檔案不見了`)
+    return { buffer: Buffer.from(file.data), filename: quotePdfFilename(quote) }
+  }
 
   const settings = await getSettings()
 

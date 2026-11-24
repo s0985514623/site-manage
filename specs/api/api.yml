@@ -550,6 +550,7 @@ components:
         - NO_RENEWABLE_SERVICE
         - MIXED_CURRENCY
         - SYSTEM_TASK_NOT_DELETABLE
+        - QUOTE_NO_TAKEN
 
     ActionOk:
       type: object

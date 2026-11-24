@@ -114,6 +114,12 @@ export const taxModeEnum = pgEnum('tax_mode', [
   'none', // 免稅
 ])
 
+/**
+ * 報價單來源：系統依項目產生 PDF，或管理者上傳外部做好的 PDF。
+ * 上傳的報價單沒有明細，PDF 與寄送附件一律用上傳的檔案（quote_files）。
+ */
+export const quoteSourceEnum = pgEnum('quote_source', ['generated', 'uploaded'])
+
 export const approvalActionEnum = pgEnum('approval_action', [
   'approve',
   'reject',
@@ -261,6 +267,7 @@ export const quotes = pgTable(
       onDelete: 'restrict',
     }),
     status: quoteStatusEnum('status').notNull().default('draft'),
+    source: quoteSourceEnum('source').notNull().default('generated'),
 
     /** 錨點 = 此網站最早到期的項目，合併窗口由此日往後推算。專案報價沒有錨點 */
     anchorServiceId: uuid('anchor_service_id'),
@@ -508,6 +515,22 @@ export const quoteAttachments = pgTable(
   },
   (t) => [index('quote_attachments_quote_idx').on(t.quoteId)],
 )
+
+/**
+ * 上傳報價單的 PDF 本體（quotes.source = 'uploaded'）。
+ * 獨立成表：報價單列表會一次讀很多張 quotes，不該順便把檔案讀進記憶體。
+ */
+export const quoteFiles = pgTable('quote_files', {
+  quoteId: uuid('quote_id')
+    .primaryKey()
+    .references(() => quotes.id, { onDelete: 'cascade' }),
+  filename: text('filename').notNull(),
+  contentType: text('content_type').notNull(),
+  sizeBytes: integer('size_bytes').notNull(),
+  data: bytea('data').notNull(),
+  uploadedBy: text('uploaded_by').notNull(),
+  createdAt: createdAt(),
+})
 
 /* ------------------------------------------------------------------ */
 /* 登入憑證（AES-256-GCM 加密）                                          */
@@ -885,6 +908,52 @@ export const projectMilestones = pgTable(
   (t) => [index('project_milestones_project_idx').on(t.projectId)],
 )
 
+/* ------------------------------------------------------------------ */
+/* 近況（專案 / 網站的對話式更新紀錄）                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 一則近況：文字＋多張圖片，依時間排成對話串。
+ * 掛在專案或網站其中之一（CHECK 恰好一個）。
+ */
+export const updates = pgTable(
+  'updates',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    projectId: uuid('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+    siteId: uuid('site_id').references(() => sites.id, { onDelete: 'cascade' }),
+    body: text('body').notNull().default(''),
+    createdBy: text('created_by').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('updates_project_idx').on(t.projectId, t.createdAt),
+    index('updates_site_idx').on(t.siteId, t.createdAt),
+    check(
+      'updates_one_target',
+      sql`(${t.projectId} is not null) <> (${t.siteId} is not null)`,
+    ),
+  ],
+)
+
+/** 近況的圖片，存資料庫（bytea），跟其他檔案一樣隨資料庫備份 */
+export const updateImages = pgTable(
+  'update_images',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    updateId: uuid('update_id')
+      .notNull()
+      .references(() => updates.id, { onDelete: 'cascade' }),
+    filename: text('filename').notNull(),
+    contentType: text('content_type').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    data: bytea('data').notNull(),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [index('update_images_update_idx').on(t.updateId)],
+)
+
 /** LINE 快速新增專案的逐步問答暫存；取消、完成或過期即刪除 */
 export const lineConversations = pgTable('line_conversations', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -951,6 +1020,21 @@ export const quotesRelations = relations(quotes, ({ one, many }) => ({
   items: many(quoteItems),
   approvals: many(approvals),
   attachments: many(quoteAttachments),
+  file: one(quoteFiles, { fields: [quotes.id], references: [quoteFiles.quoteId] }),
+}))
+
+export const quoteFilesRelations = relations(quoteFiles, ({ one }) => ({
+  quote: one(quotes, { fields: [quoteFiles.quoteId], references: [quotes.id] }),
+}))
+
+export const updatesRelations = relations(updates, ({ one, many }) => ({
+  project: one(projects, { fields: [updates.projectId], references: [projects.id] }),
+  site: one(sites, { fields: [updates.siteId], references: [sites.id] }),
+  images: many(updateImages),
+}))
+
+export const updateImagesRelations = relations(updateImages, ({ one }) => ({
+  update: one(updates, { fields: [updateImages.updateId], references: [updates.id] }),
 }))
 
 export const quoteAttachmentsRelations = relations(
@@ -1047,3 +1131,6 @@ export type ProjectMilestone = typeof projectMilestones.$inferSelect
 export type LineConversation = typeof lineConversations.$inferSelect
 export type Stamp = typeof stamps.$inferSelect
 export type ScheduledTask = typeof scheduledTasks.$inferSelect
+export type QuoteFile = typeof quoteFiles.$inferSelect
+export type Update = typeof updates.$inferSelect
+export type UpdateImage = typeof updateImages.$inferSelect

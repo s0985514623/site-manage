@@ -4,6 +4,7 @@ import { ActionForm, Disclosure } from '@/components/action-form'
 import { Card, Input, Select } from '@/components/ui'
 import { db } from '@/db'
 import { plans, type Project, type Quote } from '@/db/schema'
+import { UploadQuoteForm } from '@/components/upload-quote-form'
 import { createProjectQuoteAction } from '@/server/actions/projects'
 
 const ROWS = 5
@@ -27,14 +28,15 @@ export async function ProjectQuoteSection({
 
   return (
     <Card
-      title="產生報價"
+      title="報價"
       description={
         quotes.length > 0
-          ? `已有 ${quotes.length} 張報價單，可以再產生一張（例如追加功能）`
-          : '項目說明、數量、單位、單價。空白列會略過'
+          ? `已有 ${quotes.length} 張報價單，可以再產生或上傳一張（例如追加功能）`
+          : '由系統依項目產生，或上傳自己做好的報價單 PDF'
       }
     >
-      <div className="p-5">
+      <div className="space-y-3 p-5">
+        <UploadQuoteForm target={{ projectId: project.id }} defaultTitle={project.name} />
         <Disclosure label="產生報價草稿">
           <ActionForm action={createProjectQuoteAction} submitLabel="產生草稿">
             <input type="hidden" name="id" value={project.id} />

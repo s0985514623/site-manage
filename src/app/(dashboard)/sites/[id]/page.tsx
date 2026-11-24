@@ -18,10 +18,13 @@ import {
   Textarea,
   Th,
 } from '@/components/ui'
+import { UpdateThread } from '@/components/update-thread'
+import { UploadQuoteForm } from '@/components/upload-quote-form'
 import { db } from '@/db'
-import { plans, services, sites, type Plan } from '@/db/schema'
+import { plans, quotes, services, sites, type Plan } from '@/db/schema'
 import { CYCLE_LABEL, advanceByCycle, daysUntil, formatTw, type BillingCycle } from '@/lib/dates'
 import {
+  QUOTE_STATUS_LABEL,
   RENEWAL_STATE_LABEL,
   SERVICE_TYPE_ICON,
   SERVICE_TYPE_LABEL,
@@ -42,7 +45,7 @@ import {
 import { CredentialReveal } from '@/components/credential-reveal'
 import { RenewalQuoteButton } from '@/components/renewal-quote-button'
 import { getSiteDetail } from '@/server/queries'
-import { asc } from 'drizzle-orm'
+import { asc, desc } from 'drizzle-orm'
 
 export const dynamic = 'force-dynamic'
 
@@ -320,11 +323,17 @@ export default async function SiteDetailPage({
   params,
 }: PageProps<'/sites/[id]'>) {
   const { id } = await params
-  const [site, planOptions] = await Promise.all([
+  if (!/^[0-9a-f-]{36}$/i.test(id)) notFound()
+  const [site, planOptions, siteQuotes] = await Promise.all([
     getSiteDetail(id),
     db.query.plans.findMany({
       where: eq(plans.active, true),
       orderBy: [asc(plans.sortOrder), asc(plans.name)],
+    }),
+    db.query.quotes.findMany({
+      where: eq(quotes.siteId, id),
+      orderBy: [desc(quotes.issueDate), desc(quotes.createdAt)],
+      limit: 20,
     }),
   ])
   if (!site) notFound()
@@ -620,6 +629,55 @@ export default async function SiteDetailPage({
           <Disclosure label="新增服務項目">
             <ServiceForm siteId={site.id} planOptions={planOptions} />
           </Disclosure>
+        </div>
+      </Card>
+
+      <UpdateThread
+        target={{ siteId: site.id }}
+        description="記錄維運狀況、客戶來信、修改內容與截圖，依時間往下加"
+      />
+
+      <Card
+        title="報價單"
+        description="這個網站的續約與專案報價單（最近 20 張）。也可以上傳自己做好的報價單 PDF"
+      >
+        {siteQuotes.length > 0 && (
+          <Table>
+            <thead>
+              <tr>
+                <Th>單號</Th>
+                <Th>標題</Th>
+                <Th>開立</Th>
+                <Th align="right">合計</Th>
+                <Th>狀態</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {siteQuotes.map((q) => (
+                <tr key={q.id} className="hover:bg-surface-muted">
+                  <Td>
+                    <Link href={`/quotes/${q.id}`} className="tabular font-medium hover:text-accent hover:underline">
+                      {q.quoteNo}
+                    </Link>
+                  </Td>
+                  <Td className="text-muted">
+                    {q.projectName ?? '—'}
+                    {q.source === 'uploaded' && <span className="ml-2 text-xs">（上傳）</span>}
+                  </Td>
+                  <Td className="tabular text-muted">{formatTw(q.issueDate)}</Td>
+                  <Td align="right" className="tabular">
+                    {formatMoney(q.total, q.currency)}
+                  </Td>
+                  <Td>
+                    <Badge>{QUOTE_STATUS_LABEL[q.status]}</Badge>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+        <div className={`p-5 ${siteQuotes.length > 0 ? 'border-t border-border' : ''}`}>
+          <UploadQuoteForm target={{ siteId: site.id }} defaultTitle={site.name} />
         </div>
       </Card>
 

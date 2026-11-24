@@ -58,6 +58,7 @@ async function getQuote(id: string) {
       site: true,
       project: true,
       items: { orderBy: [asc(quoteItems.sortOrder)] },
+      file: { columns: { filename: true, sizeBytes: true, uploadedBy: true, createdAt: true } },
       attachments: {
         // 刻意不取 data：那是檔案本體，開個頁面不該把幾 MB 讀進記憶體
         columns: {
@@ -115,6 +116,7 @@ export default async function QuoteDetailPage({
   const recipients = await quoteRecipients(quote.clientId)
   const canSend =
     quote.status === 'draft' || quote.status === 'pending_approval'
+  const uploaded = quote.source === 'uploaded'
   const isClosed =
     quote.status === 'cancelled' ||
     quote.status === 'rejected' ||
@@ -191,16 +193,42 @@ export default async function QuoteDetailPage({
         <div className="grid grid-cols-2 gap-5 p-5 sm:grid-cols-4">
           <Meta label="開立日期" value={formatTw(quote.issueDate)} />
           <Meta label="報價有效至" value={formatTw(quote.validUntil)} />
-          <Meta
-            label="合併基準日"
-            value={quote.anchorDate ? formatTw(quote.anchorDate) : '—（專案報價）'}
-          />
+          {uploaded ? (
+            <Meta label="來源" value="上傳的 PDF" />
+          ) : (
+            <Meta
+              label="合併基準日"
+              value={quote.anchorDate ? formatTw(quote.anchorDate) : '—（專案報價）'}
+            />
+          )}
           <Meta
             label="合計"
             value={formatMoney(quote.total, quote.currency)}
           />
         </div>
 
+        {uploaded ? (
+          <div className="border-t border-border px-5 py-4 text-sm">
+            <p>
+              這張報價單是上傳的 PDF
+              {quote.file && (
+                <span className="text-muted">
+                  （{quote.file.filename}，{formatBytes(quote.file.sizeBytes)}）
+                </span>
+              )}
+              ，系統只記錄合計金額。寄給客戶時附上的就是這個檔案。
+            </p>
+            <a
+              href={`/api/quotes/${quote.id}/pdf`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 inline-block font-medium text-accent hover:underline"
+            >
+              開啟 PDF →
+            </a>
+          </div>
+        ) : (
+          <>
         <Table>
           <thead>
             <tr>
@@ -257,6 +285,8 @@ export default async function QuoteDetailPage({
             </div>
           </dl>
         </div>
+          </>
+        )}
       </Card>
 
       {quote.sentAt && (
@@ -530,7 +560,7 @@ export default async function QuoteDetailPage({
               </div>
             )}
 
-            {(quote.status === 'sent' || quote.status === 'accepted') && (
+            {!uploaded && (quote.status === 'sent' || quote.status === 'accepted') && (
               <div className="border-t border-border pt-5">
                 <ActionForm action={markQuoteRenewed} submitLabel="標記已續約">
                   <input type="hidden" name="id" value={quote.id} />
