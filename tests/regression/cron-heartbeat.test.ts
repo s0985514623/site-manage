@@ -4,7 +4,7 @@ import { fakeNet } from '../fakes/network'
 import { 排程執行, type CronName } from '../support/cron'
 import { 系統設定為 } from '../support/given'
 
-/** 第 5 階段：8 支排程成功後都會通知外部監控主機；密鑰錯誤不送 */
+/** 第 5 階段：所有內建排程成功後都會通知外部監控主機；密鑰錯誤不送 */
 const ALL: CronName[] = [
   'expiry-scan',
   'quote-draft',
@@ -14,6 +14,7 @@ const ALL: CronName[] = [
   'gcal-sync',
   'detect',
   'uptime',
+  'mail-check',
 ]
 
 describe('所有排程都送心跳', () => {

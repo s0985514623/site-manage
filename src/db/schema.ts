@@ -377,6 +377,14 @@ export const services = pgTable(
      */
     detectHost: text('detect_host'),
 
+    /**
+     * 企業信箱檢查用（type = email）。
+     * mailbox 留空 = service@<網域>；網域取 detectHost → identifier → 網站網址。
+     * dkimSelector 留空時試常見的 selector（google、selector1…）。
+     */
+    mailbox: text('mailbox'),
+    dkimSelector: text('dkim_selector'),
+
     /** 套用的方案範本，報價時用來帶出規格說明 */
     planId: uuid('plan_id').references(() => plans.id, { onDelete: 'set null' }),
     /** 自訂規格說明。有值時覆蓋方案範本的內容 */
@@ -800,6 +808,41 @@ export const uptimeChecks = pgTable(
 )
 
 /* ------------------------------------------------------------------ */
+/* 企業信箱檢查紀錄（DNS＋SMTP 外部探測）                                   */
+/* ------------------------------------------------------------------ */
+
+export const mailCheckStatusEnum = pgEnum('mail_check_status', ['ok', 'warn', 'fail'])
+
+/** 每一項檢查的結果，原樣存進 mail_checks.results */
+export type MailCheckItem = {
+  key: 'mx' | 'smtp' | 'spf' | 'dkim' | 'dmarc'
+  /** receive = 收信、send = 寄信（會不會被當垃圾信） */
+  group: 'receive' | 'send'
+  label: string
+  status: 'ok' | 'warn' | 'fail'
+  detail: string
+}
+
+/** 最新一筆即為目前狀態；排程只在由正常轉為 fail（或恢復）時告警 */
+export const mailChecks = pgTable(
+  'mail_checks',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    serviceId: uuid('service_id')
+      .notNull()
+      .references(() => services.id, { onDelete: 'cascade' }),
+    checkedAt: timestamp('checked_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    domain: text('domain').notNull(),
+    mailbox: text('mailbox').notNull(),
+    status: mailCheckStatusEnum('status').notNull(),
+    results: jsonb('results').$type<MailCheckItem[]>().notNull(),
+  },
+  (t) => [index('mail_checks_service_time_idx').on(t.serviceId, t.checkedAt)],
+)
+
+/* ------------------------------------------------------------------ */
 /* Google OAuth token（加密）                                           */
 /* ------------------------------------------------------------------ */
 
@@ -1004,6 +1047,7 @@ export const servicesRelations = relations(services, ({ one, many }) => ({
   }),
   credentials: many(credentials),
   notifications: many(notifications),
+  mailChecks: many(mailChecks),
   sourceProject: one(projects, {
     fields: [services.sourceProjectId],
     references: [projects.id],
@@ -1099,6 +1143,10 @@ export const projectMilestonesRelations = relations(
 
 export const uptimeChecksRelations = relations(uptimeChecks, ({ one }) => ({
   site: one(sites, { fields: [uptimeChecks.siteId], references: [sites.id] }),
+}))
+
+export const mailChecksRelations = relations(mailChecks, ({ one }) => ({
+  service: one(services, { fields: [mailChecks.serviceId], references: [services.id] }),
 }))
 
 /* ------------------------------------------------------------------ */

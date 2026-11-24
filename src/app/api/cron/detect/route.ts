@@ -5,7 +5,7 @@ import { services } from '@/db/schema'
 import { logActivity } from '@/lib/activity'
 import { runCronJob } from '@/lib/cron'
 import { daysUntil } from '@/lib/dates'
-import { checkSsl } from '@/lib/ssl'
+import { checkSsl, looksLikeHost } from '@/lib/ssl'
 import { lookupDomain } from '@/lib/whois'
 
 export const dynamic = 'force-dynamic'
@@ -23,18 +23,6 @@ export const maxDuration = 300
  * 介面會標示衝突，由你確認後才套用。理由很實際：WHOIS 格式各家不同，
  * 解析錯一個日期就會讓報價單在錯的時間、用錯的金額寄給客戶。
  */
-
-/**
- * 字串看起來像不像網域／網址。
- *
- * 用來避免把「網域名稱續約」這類中文標籤送去查 WHOIS ——
- * 那會被轉成 punycode 後得到一個看不懂的錯誤訊息。
- */
-function looksLikeHost(value: string): boolean {
-  const text = value.trim()
-  if (!text || /\s/.test(text)) return false
-  return /^(https?:\/\/)?[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i.test(text)
-}
 
 /** WHOIS 有查詢頻率限制，同一個網域最多每週查一次 */
 const RECHECK_AFTER_DAYS = 7

@@ -31,6 +31,7 @@ export const VIOLATION_TYPES = [
   'MIXED_CURRENCY',
   'SYSTEM_TASK_NOT_DELETABLE',
   'QUOTE_NO_TAKEN',
+  'NO_MAIL_DOMAIN',
 ] as const
 export type ViolationType = (typeof VIOLATION_TYPES)[number]
 

@@ -43,6 +43,13 @@
       "when": 1795482501099,
       "tag": "0005_many_liz_osborn",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795494453731,
+      "tag": "0006_mail_check",
+      "breakpoints": true
     }
   ]
 }

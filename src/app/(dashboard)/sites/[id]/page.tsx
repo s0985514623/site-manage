@@ -43,6 +43,7 @@ import {
   saveCredential,
 } from '@/server/actions/credentials'
 import { CredentialReveal } from '@/components/credential-reveal'
+import { MailCheckCard } from '@/components/mail-check-card'
 import { RenewalQuoteButton } from '@/components/renewal-quote-button'
 import { getSiteDetail } from '@/server/queries'
 import { asc, desc } from 'drizzle-orm'
@@ -152,11 +153,15 @@ function ServiceForm({
           </Select>
         </Field>
 
-        {(!service || service.type === 'domain' || service.type === 'ssl') && (
+        {(!service || service.type === 'domain' || service.type === 'ssl' || service.type === 'email') && (
           <Field
             label="偵測目標"
             className="sm:col-span-2"
-            hint="要查 WHOIS／SSL 的網域或網址。留空時，若上面的「項目名稱」本身就是網域就直接用它"
+            hint={
+              service?.type === 'email'
+                ? '要檢查信箱設定的網域。留空時用「項目名稱」（若是網域），再不行就用網站網址'
+                : '要查 WHOIS／SSL（企業信箱則是信箱網域）的網域或網址。留空時，若上面的「項目名稱」本身就是網域就直接用它'
+            }
           >
             <Input
               name="detectHost"
@@ -164,6 +169,26 @@ function ServiceForm({
               placeholder="example.com.tw"
             />
           </Field>
+        )}
+
+        {(!service || service.type === 'email') && (
+          <>
+            <Field label="檢查信箱" hint="只有企業信箱使用。留空 = service@網域">
+              <Input
+                name="mailbox"
+                type="email"
+                defaultValue={service?.mailbox ?? ''}
+                placeholder="service@example.com.tw"
+              />
+            </Field>
+            <Field label="DKIM selector" hint="只有企業信箱使用。留空時試常見的（google、selector1…）">
+              <Input
+                name="dkimSelector"
+                defaultValue={service?.dkimSelector ?? ''}
+                placeholder="google"
+              />
+            </Field>
+          </>
         )}
 
         <Field
@@ -631,6 +656,8 @@ export default async function SiteDetailPage({
           </Disclosure>
         </div>
       </Card>
+
+      <MailCheckCard siteId={site.id} primaryUrl={site.primaryUrl} services={site.services} />
 
       <UpdateThread
         target={{ siteId: site.id }}

@@ -42,6 +42,7 @@ export const BUILTIN_JOBS = [
   'payment-followup',
   'weekly-report',
   'uptime',
+  'mail-check',
 ] as const
 export type BuiltinJob = (typeof BUILTIN_JOBS)[number]
 
@@ -54,6 +55,7 @@ export const BUILTIN_JOB_LABEL: Record<BuiltinJob, string> = {
   'payment-followup': '未收款追蹤',
   'weekly-report': 'LINE 每週週報',
   uptime: '網站存活監控',
+  'mail-check': '企業信箱檢查',
 }
 
 export const HTTP_METHODS = ['GET', 'POST'] as const

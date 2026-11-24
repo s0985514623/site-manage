@@ -11,6 +11,7 @@ const ROUTES = {
   'gcal-sync': () => import('@/app/api/cron/gcal-sync/route'),
   detect: () => import('@/app/api/cron/detect/route'),
   uptime: () => import('@/app/api/cron/uptime/route'),
+  'mail-check': () => import('@/app/api/cron/mail-check/route'),
 } as const
 
 export type CronName = keyof typeof ROUTES

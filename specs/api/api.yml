@@ -551,6 +551,7 @@ components:
         - MIXED_CURRENCY
         - SYSTEM_TASK_NOT_DELETABLE
         - QUOTE_NO_TAKEN
+        - NO_MAIL_DOMAIN
 
     ActionOk:
       type: object

@@ -28,5 +28,6 @@ return [
         'weekly-report' => 8 * 86400,    // 每週一
         'detect' => 8 * 86400,           // 每週一
         'uptime' => 3600,                // 每 15 分鐘
+        'mail-check' => 26 * 3600,       // 每日
     ],
 ];

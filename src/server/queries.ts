@@ -5,6 +5,7 @@ import {
   clients,
   contacts,
   credentials,
+  mailChecks,
   quotes,
   services,
   projects,
@@ -67,7 +68,11 @@ export async function getSiteDetail(id: string) {
       services: {
         orderBy: [asc(services.expiresAt)],
         // 憑證的密文一起帶出來，但明文永遠只在按下「顯示」時才解密
-        with: { credentials: { orderBy: [asc(credentials.label)] } },
+        with: {
+          credentials: { orderBy: [asc(credentials.label)] },
+          // 企業信箱的最新一次檢查結果
+          mailChecks: { orderBy: [desc(mailChecks.checkedAt)], limit: 1 },
+        },
       },
     },
   })

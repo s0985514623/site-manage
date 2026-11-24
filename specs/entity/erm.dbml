@@ -115,7 +115,27 @@ Table services {
   current_quote_id uuid
   gcal_event_id   text
   source_project_id uuid         [note: '[NEW] 由哪個專案轉維運建立，可空']
+  detect_host     text           [note: '偵測目標；企業信箱用它當信箱網域']
+  mailbox         text           [note: '[NEW] 企業信箱檢查的信箱，空 = service@網域']
+  dkim_selector   text           [note: '[NEW] 空 = 試常見 selector']
   Note: '服務項目（其餘欄位不變，略）'
+}
+
+Enum mail_check_status {
+  ok
+  warn
+  fail
+}
+
+Table mail_checks {
+  id          uuid              [pk]
+  service_id  uuid              [not null]
+  checked_at  timestamptz       [not null]
+  domain      text              [not null]
+  mailbox     text              [not null]
+  status      mail_check_status [not null, note: '各項取最差']
+  results     jsonb             [not null, note: 'MailCheckItem[]：mx / smtp / spf / dkim / dmarc']
+  Note: '[NEW] 企業信箱檢查紀錄，最新一筆為目前狀態，保留 30 天'
 }
 
 Table quotes {
@@ -370,3 +390,4 @@ Ref: quote_files.quote_id - quotes.id [delete: cascade]              // [NEW]
 Ref: updates.project_id > projects.id [delete: cascade]              // [NEW]
 Ref: updates.site_id > sites.id [delete: cascade]                    // [NEW]
 Ref: update_images.update_id > updates.id [delete: cascade]          // [NEW]
+Ref: mail_checks.service_id > services.id [delete: cascade]          // [NEW]

@@ -36,6 +36,7 @@ const BUILTIN_ROUTES: Record<BuiltinJob, () => Promise<{ GET: (request: Request)
   'payment-followup': () => import('@/app/api/cron/payment-followup/route'),
   'weekly-report': () => import('@/app/api/cron/weekly-report/route'),
   uptime: () => import('@/app/api/cron/uptime/route'),
+  'mail-check': () => import('@/app/api/cron/mail-check/route'),
 }
 
 const HTTP_TIMEOUT_MS = 30_000

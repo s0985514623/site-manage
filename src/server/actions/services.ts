@@ -48,6 +48,14 @@ const serviceSchema = z.object({
   priceAmount: z.string().trim(),
   currency: z.string().trim().min(1),
   detectHost: z.string().trim(),
+  mailbox: z
+    .string()
+    .trim()
+    .refine((v) => v === '' || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), '檢查信箱格式需為 name@example.com'),
+  dkimSelector: z
+    .string()
+    .trim()
+    .refine((v) => v === '' || /^[a-z0-9._-]+$/i.test(v), 'DKIM selector 只能有英數字、點、底線與連字號'),
   planId: z.string().trim(),
   specNote: z.string().trim(),
   note: z.string().trim(),
@@ -85,6 +93,8 @@ function parseForm(formData: FormData) {
     priceAmount: read(formData, 'priceAmount'),
     currency: read(formData, 'currency') || 'TWD',
     detectHost: read(formData, 'detectHost'),
+    mailbox: read(formData, 'mailbox'),
+    dkimSelector: read(formData, 'dkimSelector'),
     planId: read(formData, 'planId'),
     specNote: read(formData, 'specNote'),
     note: read(formData, 'note'),
@@ -137,6 +147,8 @@ export async function saveService(
     priceAmount,
     currency: d.currency,
     detectHost: d.detectHost || null,
+    mailbox: d.mailbox || null,
+    dkimSelector: d.dkimSelector || null,
     planId: d.planId || null,
     // 自訂規格會覆蓋方案範本；留空則報價時回退到方案的內容
     specNote: d.specNote || null,

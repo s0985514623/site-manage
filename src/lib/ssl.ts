@@ -30,6 +30,18 @@ export function hostnameOf(input: string): string | null {
   }
 }
 
+/**
+ * 字串看起來像不像網域／網址。
+ *
+ * 用來避免把「網域名稱續約」這類中文標籤送去查 WHOIS ——
+ * 那會被轉成 punycode 後得到一個看不懂的錯誤訊息。
+ */
+export function looksLikeHost(value: string): boolean {
+  const text = value.trim()
+  if (!text || /\s/.test(text)) return false
+  return /^(https?:\/\/)?[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i.test(text)
+}
+
 export async function checkSsl(
   input: string,
   timeoutMs = 10_000,

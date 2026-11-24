@@ -2,7 +2,7 @@
 
 > 給下一次對話（人或 AI）快速接手用。每條決策都寫「決定了什麼」＋「為什麼／怎麼套用」。
 > 細節規格看 `specs/`，實作計畫看 `plans/site-ops-expansion/`，澄清問答原文看 `specs/clarify/2026-11-16-1046.md`。
-> 最後更新：2026-11-24
+> 最後更新：2026-11-24（企業信箱檢查）
 
 ---
 
@@ -68,6 +68,16 @@
 - 「檢視 PDF」與寄信附件都用上傳的原檔（`renderQuotePdf` 開頭分流）。
 - 可勾「我已經自己寄給客戶」→ 直接 `sent`＋`sent_at`，進入追蹤未回覆；不勾則是草稿，走原本寄送流程。
 - 上傳的報價單不涵蓋服務項目，報價單頁不顯示「標記已續約」。
+
+### 企業信箱檢查（2026-11-24 追加）
+- 對象：使用中的「企業信箱」服務項目（網站已結案的略過）。網站頁有「信箱檢查」卡片＋「立即檢查」；內建排程 `mail-check` 每天 08:30（migration 0006 種下）。
+- 只做**外部探測**（使用者選的，不存信箱密碼、不真的寄信）：
+  - 收信：MX 紀錄＋連 MX 25 port 走 SMTP 到 `RCPT TO`（`MAIL FROM:<>`）就 QUIT。
+  - 寄信：SPF（沒有／多筆／+all = fail）、DKIM（指定 selector 查不到 = fail；沒指定時試常見 selector，都沒有 = warn）、DMARC（沒有 = warn）。
+- 信箱預設 `service@<網域>`；網域取「偵測目標」→ 項目名稱（若像網域）→ 網站網址，去掉 `www.`。服務項目可填「檢查信箱」「DKIM selector」覆蓋。
+- 結果 ok／warn／fail，整體取最差，存 `mail_checks`（保留 30 天）。25 port 全部逾時只算 warn（多半是本機或 VPS 擋 25 port），被拒才算 fail。
+- 排程只在**變成 fail**與**從 fail 恢復**時發 LINE＋Email；warn 不告警。
+- 找不到網域回 `NO_MAIL_DOMAIN`。
 
 ### 專案
 - 類別固定四種：`new_site`（新網站製作）、`custom_plugin`（客製外掛）、`bug_fix`（BUG 排除）、`other`。
