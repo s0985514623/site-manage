@@ -28,8 +28,46 @@ const STATUS_TONE = {
   expired: 'overdue',
 } as const
 
-export default async function QuotesPage() {
-  const [rows, config] = await Promise.all([listQuotes(), getSettings()])
+type QuoteStatus = keyof typeof STATUS_TONE
+
+function isQuoteStatus(v: unknown): v is QuoteStatus {
+  return typeof v === 'string' && v in STATUS_TONE
+}
+
+function FilterLink({
+  label,
+  status,
+  current,
+  count,
+}: {
+  label: string
+  status?: QuoteStatus
+  current?: QuoteStatus
+  count: number
+}) {
+  const active = status === current
+  return (
+    <Link
+      href={status ? `/quotes?status=${status}` : '/quotes'}
+      className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-sm ${
+        active ? 'bg-accent text-white' : 'text-muted hover:bg-surface-muted hover:text-foreground'
+      }`}
+    >
+      {label}
+      <span className={`ml-1 tabular ${active ? 'text-white/80' : 'text-muted'}`}>{count}</span>
+    </Link>
+  )
+}
+
+export default async function QuotesPage({ searchParams }: PageProps<'/quotes'>) {
+  const sp = await searchParams
+  const status = isQuoteStatus(sp.status) ? sp.status : undefined
+  const [allRows, config] = await Promise.all([listQuotes(), getSettings()])
+  const rows = status ? allRows.filter((r) => r.status === status) : allRows
+  const counts = allRows.reduce<Partial<Record<QuoteStatus, number>>>((acc, r) => {
+    acc[r.status] = (acc[r.status] ?? 0) + 1
+    return acc
+  }, {})
 
   return (
     <div>
@@ -39,7 +77,24 @@ export default async function QuotesPage() {
       />
 
       <Card>
-        {rows.length === 0 ? (
+        {allRows.length > 0 && (
+          <div className="flex flex-wrap gap-1 border-b border-border px-4 py-3">
+            <FilterLink label="全部" current={status} count={allRows.length} />
+            {(Object.keys(STATUS_TONE) as QuoteStatus[]).map((value) => (
+              <FilterLink
+                key={value}
+                label={QUOTE_STATUS_LABEL[value]}
+                status={value}
+                current={status}
+                count={counts[value] ?? 0}
+              />
+            ))}
+          </div>
+        )}
+
+        {allRows.length > 0 && rows.length === 0 ? (
+          <EmptyState title={`沒有「${status ? QUOTE_STATUS_LABEL[status] : ''}」的報價單`} />
+        ) : rows.length === 0 ? (
           <EmptyState
             title="還沒有報價單"
             description={`當某個網站最早到期的項目剩下 ${config.quoteTriggerDays} 天時，系統會自動把該網站在那之後 ${config.quoteWindowDays} 天內到期的項目合併成一張報價單草稿。`}

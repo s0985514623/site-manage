@@ -90,6 +90,7 @@ export async function submitHandover(
           name: d.siteName || project.name,
           primaryUrl: d.siteUrl || null,
           status: 'live',
+          monitorEnabled: !!d.siteUrl,
         })
         .returning()
       siteId = site.id

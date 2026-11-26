@@ -60,6 +60,8 @@ export async function createSite(
       status: d.status,
       dnsNote: d.dnsNote || null,
       note: d.note || null,
+      // 新網站預設開啟存活監控；沒網址就沒東西可探測
+      monitorEnabled: !!d.primaryUrl,
     })
     .returning()
 
